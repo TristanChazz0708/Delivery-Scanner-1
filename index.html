@@ -2,78 +2,107 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Delivery QR Scanner — Choose Save Location (OneDrive Friendly)</title>
+  <title>Delivery QR Scanner — Save Folder UI</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-    :root{--primary:#0078d4;--muted:#6c757d}
-    body{font-family:system-ui,Roboto,Arial;margin:12px;color:#111;background:#fff}
-    h1{font-size:18px;margin-bottom:6px}
-    .controls{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
-    button{flex:1 1 48%;padding:12px;border-radius:8px;border:none;background:var(--primary);color:#fff;font-size:15px}
-    button.secondary{background:var(--muted)}
+    :root{--primary:#0b74de;--accent:#0a66c2;--muted:#6c757d;--bg:#fbfcfe}
+    body{font-family:Inter,system-ui,Segoe UI,Roboto,Arial;margin:12px;color:#111;background:var(--bg)}
+    header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+    h1{font-size:18px;margin:0}
+    .controls{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+    button{padding:10px 12px;border-radius:8px;border:none;background:var(--primary);color:#fff;font-size:15px;cursor:pointer}
+    button.secondary{background:#fff;color:var(--primary);border:1px solid #d6e6fb}
+    button.ghost{background:transparent;color:var(--muted);border:1px dashed #e6e6e6}
     .wide{flex:1 1 100%}
-    pre{background:#f6f6f6;padding:8px;border-radius:6px;max-height:260px;overflow:auto}
+    .card{background:#fff;border-radius:10px;padding:12px;box-shadow:0 1px 2px rgba(16,24,40,0.04);margin-bottom:12px}
+    .hint{font-size:13px;color:var(--muted);margin-top:6px}
     #video{width:100%;max-width:640px;border-radius:8px;background:#000;display:none}
-    input[type=file]{display:none}
-    .hint{font-size:13px;color:#444;margin-top:6px}
     table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px}
-    th,td{border:1px solid #e1e1e1;padding:6px;text-align:left}
-    #folderName{font-weight:600;color:#333}
-    #canvas{display:none}
-    .small{font-size:13px;color:#666;margin-top:6px}
-    .status{margin-top:8px;font-size:13px;color:#222}
+    th,td{border:1px solid #eef2f7;padding:8px;text-align:left}
+    pre{background:#f6f8fb;padding:10px;border-radius:8px;overflow:auto;max-height:220px}
+    #folderName{font-weight:600;color:#0b74de}
+    .status{font-size:13px;color:#333;margin-top:8px}
+    .toast{position:fixed;right:16px;bottom:16px;background:#111;color:#fff;padding:10px 14px;border-radius:8px;box-shadow:0 6px 18px rgba(11,20,40,0.2);display:none}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .muted{color:var(--muted);font-size:13px}
+    input[type=file]{display:none}
   </style>
 </head>
 <body>
-  <h1>Delivery QR Scanner</h1>
+  <header>
+    <h1>Delivery QR Scanner</h1>
+    <div class="muted">Interactive • Upload or Camera • Save CSV</div>
+  </header>
 
-  <div class="controls">
-    <button id="uploadBtn" class="secondary">Upload Photo (QR)</button>
-    <input id="fileInput" type="file" accept="image/*" capture="environment">
-    <button id="openCamBtn">Open Camera</button>
-    <button id="takePhotoBtn" class="secondary">Take Photo</button>
-    <button id="closeCamBtn" class="secondary">Close Camera</button>
-  </div>
+  <section class="card">
+    <div class="row controls">
+      <button id="uploadBtn" class="secondary">Upload Photo (QR)</button>
+      <input id="fileInput" type="file" accept="image/*" capture="environment">
+      <button id="openCamBtn">Open Camera</button>
+      <button id="takePhotoBtn" class="secondary">Take Photo</button>
+      <button id="closeCamBtn" class="ghost">Close Camera</button>
+    </div>
 
-  <div class="hint">Upload a photo or use the camera. Use Choose Save Location to pick where CSVs will be written (internal storage, OneDrive, Google Drive if exposed by your Files app).</div>
+    <div class="hint">Upload a photo or use the camera. The app will try multiple enhancements and rotations to decode QR images (works well on 12MP+ cameras).</div>
 
-  <video id="video" autoplay playsinline></video>
-  <canvas id="canvas"></canvas>
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas" style="display:none"></canvas>
+  </section>
 
-  <h3>Last Scan</h3>
-  <pre id="last">No scans yet</pre>
+  <section class="card">
+    <h3 style="margin:0 0 8px 0">Last Scan</h3>
+    <pre id="last">No scans yet</pre>
+  </section>
 
-  <h3>Stored Logs</h3>
-  <div id="count"></div>
-  <table id="logTable">
-    <thead><tr><th>Time</th><th>Material</th><th>Truck</th><th>Net</th><th>Location</th></tr></thead>
-    <tbody></tbody>
-  </table>
+  <section class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h3 style="margin:0">Stored Logs</h3>
+      <div class="muted" id="count">Total logs: 0</div>
+    </div>
+    <table id="logTable" aria-live="polite">
+      <thead><tr><th>Time</th><th>Material</th><th>Truck</th><th>Net</th><th>Location</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
 
-  <div style="margin-top:10px" class="controls">
-    <button id="saveToday" class="wide">Save Today CSV (download)</button>
-  </div>
+  <section class="card" id="savePanel">
+    <h3 style="margin:0 0 8px 0">Save Options</h3>
 
-  <div class="small">Choose Save Location (recommended: pick your OneDrive folder inside the Files app if OneDrive is linked on your device)</div>
+    <div class="row" style="margin-bottom:8px">
+      <button id="chooseFolderBtn" class="secondary">Choose Save Folder</button>
+      <button id="clearFolderBtn" class="ghost">Clear Chosen Folder</button>
+      <div class="muted" style="flex:1">Selected: <span id="folderName">none</span></div>
+    </div>
 
-  <div style="margin-top:6px" class="controls">
-    <button id="chooseFolderBtn" class="secondary">Choose Save Location (system picker)</button>
-    <button id="openFilesAppBtn" class="secondary">Open Files App (help)</button>
-    <button id="chooseFolderFallbackBtn" class="wide">Fallback: Select Folder (read-only picker)</button>
-  </div>
+    <div class="row" style="margin-bottom:8px">
+      <button id="saveToFolderBtn" class="wide">Save To Chosen Folder</button>
+    </div>
 
-  <div class="status">Selected folder: <span id="folderName">none</span></div>
+    <div class="row" style="margin-bottom:6px">
+      <button id="downloadTodayBtn" class="wide">Save Today's CSV (download)</button>
+    </div>
 
-  <div style="margin-top:8px" class="controls">
-    <button id="saveTodayToFolderBtn" class="wide secondary">Save Today CSV to Chosen Folder</button>
-  </div>
+    <div class="hint">Tip: If your device exposes OneDrive/Google Drive in the system Files picker, choose that folder to save directly into cloud storage without changing browser download settings.</div>
+  </section>
+
+  <div class="toast" id="toast"></div>
 
 <script>
-/* =========================
-   Simple scanner + storage
-   ========================= */
+/* ====== Lightweight UI helpers ====== */
+function toast(msg, ms = 3000){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.display = 'block';
+  clearTimeout(t._timeout);
+  t._timeout = setTimeout(()=> t.style.display = 'none', ms);
+}
+
+/* ====== Storage & CSV helpers ====== */
 const STORAGE_KEY = 'deliveryLogs_v1';
 const REQUIRED = ['materialType','truckId','driver','netWeight','taeWeight','materialWeight','location'];
+const HANDLE_DB = 'fs-handles-v1';
+const HANDLE_STORE = 'handles';
+const HANDLE_KEY = 'chosenDir';
 
 function nowIso(){ return new Date().toISOString(); }
 function loadLogs(){ try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]') }catch(e){ return [] } }
@@ -97,45 +126,107 @@ function render(){
   const tbody = document.querySelector('#logTable tbody'); tbody.innerHTML = '';
   logs.slice().reverse().forEach(l=>{
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td style="border:1px solid #e1e1e1;padding:6px">${l.timestamp}</td><td style="border:1px solid #e1e1e1;padding:6px">${l.materialType}</td><td style="border:1px solid #e1e1e1;padding:6px">${l.truckId}</td><td style="border:1px solid #e1e1e1;padding:6px">${l.netWeight}</td><td style="border:1px solid #e1e1e1;padding:6px">${l.location}</td>`;
+    tr.innerHTML = `<td>${l.timestamp}</td><td>${l.materialType}</td><td>${l.truckId}</td><td>${l.netWeight}</td><td>${l.location}</td>`;
     tbody.appendChild(tr);
   });
 }
 
-/* =========================
-   Folder selection helpers
-   - Primary: showDirectoryPicker (writable handle)
-   - Fallback: input[webkitdirectory] (read-only list of files)
-   ========================= */
+/* ====== IndexedDB helpers for persisting directory handle ====== */
+function openDb(){
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(HANDLE_DB, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if(!db.objectStoreNames.contains(HANDLE_STORE)) db.createObjectStore(HANDLE_STORE);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function idbPut(key, value){
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(HANDLE_STORE, 'readwrite');
+    const store = tx.objectStore(HANDLE_STORE);
+    const r = store.put(value, key);
+    r.onsuccess = () => { resolve(true); db.close(); };
+    r.onerror = () => { reject(r.error); db.close(); };
+  });
+}
+async function idbGet(key){
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(HANDLE_STORE, 'readonly');
+    const store = tx.objectStore(HANDLE_STORE);
+    const r = store.get(key);
+    r.onsuccess = () => { resolve(r.result); db.close(); };
+    r.onerror = () => { reject(r.error); db.close(); };
+  });
+}
+async function idbDelete(key){
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(HANDLE_STORE, 'readwrite');
+    const store = tx.objectStore(HANDLE_STORE);
+    const r = store.delete(key);
+    r.onsuccess = () => { resolve(true); db.close(); };
+    r.onerror = () => { reject(r.error); db.close(); };
+  });
+}
+
+/* ====== File System Access API: choose folder, persist handle, restore handle ====== */
 let chosenDirHandle = null;
 const folderNameEl = document.getElementById('folderName');
 
-// Try to open system folder picker. On Android Chrome this opens the Files app where OneDrive (if mounted) appears.
 async function chooseFolder(){
   if(!('showDirectoryPicker' in window)){
-    alert('Folder selection not supported in this browser. Use the fallback "Select Folder (read-only)" button or open this page in Chrome/Edge.');
+    toast('Folder picker not supported in this browser. Use Download or open in Chrome/Edge.');
     return;
   }
   try{
-    // startIn is a hint; some platforms ignore it. Try a few hints to increase chance Files app shows cloud providers.
-    // 'documents' or 'downloads' are common starting points.
+    // startIn hint may help show cloud providers on some devices
     const dir = await window.showDirectoryPicker({ startIn: 'documents' });
     // request persistent permission
     try { await dir.requestPermission({ mode: 'readwrite' }); } catch(e){ /* ignore */ }
     chosenDirHandle = dir;
+    try { await idbPut(HANDLE_KEY, dir); } catch(e){ console.warn('Persist handle failed', e); }
     folderNameEl.textContent = dir.name || 'selected';
-    document.getElementById('last').textContent = 'Folder selected: ' + (dir.name || 'selected');
+    toast('Folder selected: ' + (dir.name || 'selected'));
   }catch(e){
-    if(e && e.name === 'AbortError'){
-      document.getElementById('last').textContent = 'Folder selection cancelled';
-      return;
-    }
+    if(e && e.name === 'AbortError'){ toast('Folder selection cancelled'); return; }
     console.error('chooseFolder error', e);
-    alert('Failed to choose folder: ' + (e && e.message || e));
+    toast('Failed to choose folder: ' + (e && e.message || e));
   }
 }
 
-// Save CSV into chosen directory handle (writable)
+async function restoreChosenFolder(){
+  if(!('showDirectoryPicker' in window)) { folderNameEl.textContent = 'not supported'; return; }
+  try{
+    const stored = await idbGet(HANDLE_KEY);
+    if(!stored){ folderNameEl.textContent = 'none'; return; }
+    chosenDirHandle = stored;
+    const perm = await chosenDirHandle.queryPermission({ mode: 'readwrite' });
+    if(perm === 'prompt'){
+      const req = await chosenDirHandle.requestPermission({ mode: 'readwrite' });
+      if(req !== 'granted'){ await idbDelete(HANDLE_KEY); chosenDirHandle = null; folderNameEl.textContent = 'none'; return; }
+    } else if(perm !== 'granted'){
+      chosenDirHandle = null; folderNameEl.textContent = 'none'; return;
+    }
+    folderNameEl.textContent = chosenDirHandle.name || 'selected';
+  }catch(e){
+    console.warn('restoreChosenFolder failed', e);
+    chosenDirHandle = null;
+    folderNameEl.textContent = 'none';
+  }
+}
+
+async function clearChosenFolder(){
+  try{ await idbDelete(HANDLE_KEY); }catch(e){ /* ignore */ }
+  chosenDirHandle = null;
+  folderNameEl.textContent = 'none';
+  toast('Cleared chosen folder');
+}
+
 async function saveCsvToChosenFolder(filename, csvContent){
   if(!chosenDirHandle) throw new Error('No folder chosen');
   const fh = await chosenDirHandle.getFileHandle(filename, { create: true });
@@ -144,50 +235,24 @@ async function saveCsvToChosenFolder(filename, csvContent){
   await writable.close();
 }
 
-// Fallback: allow user to pick a folder via input[webkitdirectory] (read-only).
-// We will capture the directory path from the first file's webkitRelativePath to show the chosen folder name.
-// This does NOT provide write access; user must move downloaded CSV into OneDrive manually if desired.
-const fallbackInput = document.createElement('input');
-fallbackInput.type = 'file';
-fallbackInput.webkitdirectory = true;
-fallbackInput.style.display = 'none';
-document.body.appendChild(fallbackInput);
-
-fallbackInput.addEventListener('change', (ev)=>{
-  const files = ev.target.files;
-  if(!files || !files.length){ document.getElementById('last').textContent = 'No folder selected'; return; }
-  // derive folder name from first file's relative path
-  const rel = files[0].webkitRelativePath || files[0].name;
-  const topFolder = rel.split('/')[0];
-  folderNameEl.textContent = topFolder || 'selected (read-only)';
-  chosenDirHandle = null; // no writable handle
-  document.getElementById('last').textContent = `Read-only folder selected: ${topFolder}. Use Download to save and move file into OneDrive if needed.`;
-  // clear input so user can reselect same folder later
-  fallbackInput.value = '';
-});
-
-function openFallbackFolderPicker(){
-  // This opens the system file picker in directory mode (if supported) and shows the folder contents.
-  // On many Android devices this will show OneDrive if it's integrated into the Files app, but it is read-only.
-  fallbackInput.click();
+/* ====== QR decode (jsQR) with robust attempts ====== */
+async function ensureJsQr(){
+  if(window.jsQR) return;
+  // try CDN (already included on many pages); if blocked, user can host locally
+  try {
+    await new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
+      s.async = true;
+      s.onload = res; s.onerror = rej;
+      document.head.appendChild(s);
+    });
+  }catch(e){
+    console.warn('jsQR CDN failed to load', e);
+  }
+  if(!window.jsQR) throw new Error('Decoder library not available (jsQR).');
 }
 
-// Helpful button to open the native Files app (cannot be guaranteed from web, but we provide instructions)
-function openFilesAppHelp(){
-  const msg = [
-    'To select OneDrive inside the Files app:',
-    '1. Make sure OneDrive app is installed and signed in on your device.',
-    '2. Open your device Files app and confirm OneDrive appears as a location.',
-    '3. Return here and tap "Choose Save Location (system picker)". When the Files UI opens, navigate to OneDrive and select the folder you want.',
-    'If your browser does not support the writable folder picker, use the fallback "Select Folder (read-only)" button and then move the downloaded CSV into OneDrive manually.'
-  ].join('\n\n');
-  alert(msg);
-}
-
-/* =========================
-   QR decoding (jsQR) + robust attempts
-   ========================= */
-// We assume jsQR is available via CDN; if blocked, user can host locally.
 function imageFileToImageElement(file){
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -230,7 +295,7 @@ function centerCropCanvas(sourceCanvas, cropRatio = 0.6){
   return dest;
 }
 async function tryDecodeFromCanvas(canvas){
-  if(typeof jsQR === 'undefined') throw new Error('Decoder library not loaded (jsQR).');
+  await ensureJsQr();
   const ctx = canvas.getContext('2d');
   const imageData = ctx.getImageData(0,0,canvas.width,canvas.height);
   let code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
@@ -244,7 +309,7 @@ async function tryDecodeFromCanvas(canvas){
 }
 async function decodeWithMultipleStrategies(file){
   const img = await imageFileToImageElement(file);
-  const maxDim = 2000; // tuned to work well on 12MP and higher
+  const maxDim = 2000;
   let w = img.naturalWidth, h = img.naturalHeight;
   if(Math.max(w,h) > maxDim){
     const scale = maxDim / Math.max(w,h);
@@ -296,22 +361,22 @@ async function decodeWithMultipleStrategies(file){
   throw new Error('No QR code found after multiple attempts');
 }
 
-/* =========================
-   Upload & camera flows
-   ========================= */
+/* ====== Upload & camera flows ====== */
 const fileInput = document.getElementById('fileInput');
 document.getElementById('uploadBtn').addEventListener('click', ()=> fileInput.click());
 
 fileInput.addEventListener('change', async (ev)=>{
   const f = ev.target.files && ev.target.files[0];
   if(!f) return;
-  document.getElementById('last').textContent = 'Starting robust decode of uploaded image...';
+  document.getElementById('last').textContent = 'Decoding uploaded image...';
   try{
     const decoded = await decodeWithMultipleStrategies(f);
     handleDecodedText(decoded);
+    toast('QR decoded successfully');
   }catch(err){
     document.getElementById('last').textContent = 'Upload decode failed: ' + (err && err.message || err);
     console.error('decode error', err);
+    toast('Decode failed');
   } finally {
     ev.target.value = '';
   }
@@ -330,15 +395,17 @@ async function openCamera(){
     stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
     video.srcObject = stream;
     video.style.display = 'block';
+    toast('Camera opened');
     document.getElementById('last').textContent = 'Camera open. Tap Take Photo to capture.';
   }catch(e){
     document.getElementById('last').textContent = 'Camera open failed: ' + (e && e.message || e);
     console.error(e);
+    toast('Camera failed');
   }
 }
 
 async function takePhoto(){
-  if(!stream){ document.getElementById('last').textContent = 'Camera not open'; return; }
+  if(!stream){ document.getElementById('last').textContent = 'Camera not open'; toast('Open camera first'); return; }
   try{
     const w = video.videoWidth || 1280;
     const h = video.videoHeight || 720;
@@ -347,12 +414,14 @@ async function takePhoto(){
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, w, h);
     const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.95));
-    document.getElementById('last').textContent = 'Captured image — starting robust decode...';
+    document.getElementById('last').textContent = 'Captured image — decoding...';
     const decoded = await decodeWithMultipleStrategies(blob);
     handleDecodedText(decoded);
+    toast('Captured and decoded');
   }catch(e){
     document.getElementById('last').textContent = 'Capture decode failed: ' + (e && e.message || e);
     console.error(e);
+    toast('Capture decode failed');
   }
 }
 
@@ -364,11 +433,10 @@ function closeCamera(){
   video.srcObject = null;
   video.style.display = 'none';
   document.getElementById('last').textContent = 'Camera closed';
+  toast('Camera closed');
 }
 
-/* =========================
-   Decoded payload handling
-   ========================= */
+/* ====== Decoded payload handling ====== */
 function handleDecodedText(decoded){
   try{
     const payload = JSON.parse(decoded);
@@ -392,50 +460,44 @@ function handleDecodedText(decoded){
   }
 }
 
-/* =========================
-   Save / export wiring
-   ========================= */
-document.getElementById('saveToday').addEventListener('click', ()=>{
+/* ====== Save / export wiring ====== */
+document.getElementById('downloadTodayBtn').addEventListener('click', ()=>{
   const logs = loadLogs();
   const today = new Date().toISOString().slice(0,10);
   const todays = logs.filter(l=>l.timestamp.startsWith(today));
-  if(!todays.length){ alert('No logs for today'); return; }
+  if(!todays.length){ toast('No logs for today'); return; }
   const csv = logsToCsv(todays);
   const filename = `delivery-log-${today}.csv`;
   downloadFile(filename, csv);
+  toast('Downloaded CSV');
 });
 
 document.getElementById('chooseFolderBtn').addEventListener('click', chooseFolder);
-document.getElementById('openFilesAppBtn').addEventListener('click', openFilesAppHelp);
-document.getElementById('chooseFolderFallbackBtn').addEventListener('click', openFallbackFolderPicker);
+document.getElementById('clearFolderBtn').addEventListener('click', clearChosenFolder);
 
-document.getElementById('saveTodayToFolderBtn').addEventListener('click', async ()=>{
+document.getElementById('saveToFolderBtn').addEventListener('click', async ()=>{
   const logs = loadLogs();
-  const today = new Date().toISOString().slice(0,10);
-  const todays = logs.filter(l=>l.timestamp.startsWith(today));
-  if(!todays.length){ alert('No logs for today'); return; }
-  const csv = logsToCsv(todays);
-  const filename = `delivery-log-${today}.csv`;
-
-  if(chosenDirHandle){
-    try{
-      await saveCsvToChosenFolder(filename, csv);
-      alert('Saved to chosen folder: ' + filename);
-    }catch(e){
-      console.error('save to folder failed', e);
-      alert('Save to chosen folder failed: ' + (e && e.message || e));
-    }
-  } else {
-    // no writable handle; fallback to download and instruct user how to move it
-    downloadFile(filename, csv);
-    alert('No writable folder selected. CSV downloaded to your browser Downloads folder. Move it into OneDrive via the Files app if needed.');
+  if(!logs.length){ toast('No logs to save'); return; }
+  const csv = logsToCsv(logs);
+  const filename = `delivery-log-${new Date().toISOString().slice(0,10)}.csv`;
+  if(!chosenDirHandle){
+    toast('No chosen folder — use Choose Save Folder first');
+    return;
+  }
+  try{
+    await saveCsvToChosenFolder(filename, csv);
+    toast('Saved to chosen folder: ' + filename);
+  }catch(e){
+    console.error('save to folder failed', e);
+    toast('Save to chosen folder failed');
   }
 });
 
-/* =========================
-   Init
-   ========================= */
-render();
+/* ====== Init ====== */
+(async function init(){
+  try{ await restoreChosenFolder(); }catch(e){ console.warn(e); }
+  render();
+})();
 </script>
 </body>
 </html>
