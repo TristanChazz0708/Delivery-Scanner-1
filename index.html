@@ -2,61 +2,58 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>QR Upload Scanner — Parse & Record</title>
+  <title>QR Upload + Camera Capture Scanner</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-    :root{--primary:#0078d4;--muted:#6c757d}
     body{font-family:system-ui,Roboto,Arial;margin:12px;color:#111;background:#fff}
-    #reader{width:100%;max-width:720px;height:auto;margin:8px auto;border-radius:8px;overflow:hidden;background:#000}
     .controls{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
-    button{flex:1 1 48%;padding:12px;border-radius:8px;border:none;background:var(--primary);color:#fff;font-size:16px}
-    button.secondary{background:var(--muted)}
+    button{flex:1 1 48%;padding:12px;border-radius:8px;border:none;background:#0078d4;color:#fff;font-size:15px}
+    button.secondary{background:#6c757d}
     .wide{flex:1 1 100%}
     pre{background:#f6f6f6;padding:8px;border-radius:6px;max-height:220px;overflow:auto}
-    table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px}
-    th,td{border:1px solid #e1e1e1;padding:6px;text-align:left}
-    .big{font-size:15px;padding:14px}
-    .hint{font-size:13px;color:#444;margin-top:6px}
+    #video{width:100%;max-width:640px;border-radius:8px;background:#000}
     input[type=file]{display:none}
-    #folderName{font-weight:600;color:#333}
+    .hint{font-size:13px;color:#444;margin-top:6px}
   </style>
 
-  <!-- html5-qrcode CDN (loader fallback handled in script) -->
+  <!-- html5-qrcode CDN -->
   <script src="https://unpkg.com/html5-qrcode@2.3.8/minified/html5-qrcode.min.js"></script>
 </head>
 <body>
-  <h1>QR Upload Scanner</h1>
+  <h2>QR Upload + Camera Capture Scanner</h2>
 
   <div class="controls">
-    <label for="fileInput" style="flex:1 1 48%"><button class="big secondary" style="width:100%">Upload Photo (QR)</button></label>
+    <button id="uploadBtn" class="secondary">Upload Photo (QR)</button>
     <input id="fileInput" type="file" accept="image/*" capture="environment">
-    <button id="chooseFolderBtn" class="big secondary">Choose Save Folder (optional)</button>
-    <button id="saveTodayToFolderBtn" class="big">Save Today CSV to Chosen Folder</button>
+    <button id="openCamBtn">Open Camera</button>
+    <button id="takePhotoBtn" class="secondary">Take Photo</button>
+    <button id="closeCamBtn" class="secondary">Close Camera</button>
   </div>
 
-  <div id="status" class="hint">Chosen folder: <span id="folderName">none</span></div>
+  <div class="hint">Upload a photo or use the camera. Captured images are decoded the same way as uploads.</div>
 
-  <h2>Last Scan</h2>
+  <video id="video" autoplay playsinline style="display:none"></video>
+  <canvas id="captureCanvas" style="display:none"></canvas>
+
+  <h3>Last Scan</h3>
   <pre id="last">No scans yet</pre>
 
-  <h2>Stored Logs</h2>
+  <h3>Stored Logs</h3>
   <div id="count"></div>
-  <table id="logTable"><thead><tr><th>Time</th><th>Material</th><th>Truck</th><th>Driver</th><th>Net</th><th>Location</th></tr></thead><tbody></tbody></table>
+  <table id="logTable" style="width:100%;border-collapse:collapse;margin-top:8px;font-size:13px">
+    <thead><tr><th style="border:1px solid #e1e1e1;padding:6px">Time</th><th style="border:1px solid #e1e1e1;padding:6px">Material</th><th style="border:1px solid #e1e1e1;padding:6px">Truck</th><th style="border:1px solid #e1e1e1;padding:6px">Net</th><th style="border:1px solid #e1e1e1;padding:6px">Location</th></tr></thead>
+    <tbody></tbody>
+  </table>
 
   <div style="margin-top:10px" class="controls">
-    <button id="saveToday" class="big">Save Today CSV (download)</button>
-    <button id="exportAll" class="big secondary">Download All CSV</button>
+    <button id="saveToday" class="wide">Save Today CSV (download)</button>
   </div>
 
 <script>
-/* ====== Config ====== */
+/* ====== Simple storage & CSV ====== */
 const STORAGE_KEY = 'deliveryLogs_v1';
 const REQUIRED = ['materialType','truckId','driver','netWeight','taeWeight','materialWeight','location'];
-const HANDLE_DB = 'fs-handles-v1';
-const HANDLE_STORE = 'handles';
-const HANDLE_KEY = 'chosenDir';
 
-/* ====== Utilities ====== */
 function nowIso(){ return new Date().toISOString(); }
 function loadLogs(){ try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]') }catch(e){ return [] } }
 function saveLogs(l){ localStorage.setItem(STORAGE_KEY, JSON.stringify(l)) }
@@ -79,153 +76,109 @@ function render(){
   const tbody = document.querySelector('#logTable tbody'); tbody.innerHTML = '';
   logs.slice().reverse().forEach(l=>{
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${l.timestamp}</td><td>${l.materialType}</td><td>${l.truckId}</td><td>${(l.driver&&l.driver.name)||''}</td><td>${l.netWeight}</td><td>${l.location}</td>`;
+    tr.innerHTML = `<td style="border:1px solid #e1e1e1;padding:6px">${l.timestamp}</td><td style="border:1px solid #e1e1e1;padding:6px">${l.materialType}</td><td style="border:1px solid #e1e1e1;padding:6px">${l.truckId}</td><td style="border:1px solid #e1e1e1;padding:6px">${l.netWeight}</td><td style="border:1px solid #e1e1e1;padding:6px">${l.location}</td>`;
     tbody.appendChild(tr);
   });
 }
 
-/* ====== IndexedDB helpers for persisting directory handle ====== */
-function openDb(){
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(HANDLE_DB, 1);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if(!db.objectStoreNames.contains(HANDLE_STORE)) db.createObjectStore(HANDLE_STORE);
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-async function idbPut(key, value){
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(HANDLE_STORE, 'readwrite');
-    const store = tx.objectStore(HANDLE_STORE);
-    const r = store.put(value, key);
-    r.onsuccess = () => { resolve(true); db.close(); };
-    r.onerror = () => { reject(r.error); db.close(); };
-  });
-}
-async function idbGet(key){
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(HANDLE_STORE, 'readonly');
-    const store = tx.objectStore(HANDLE_STORE);
-    const r = store.get(key);
-    r.onsuccess = () => { resolve(r.result); db.close(); };
-    r.onerror = () => { reject(r.error); db.close(); };
-  });
-}
-async function idbDelete(key){
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(HANDLE_STORE, 'readwrite');
-    const store = tx.objectStore(HANDLE_STORE);
-    const r = store.delete(key);
-    r.onsuccess = () => { resolve(true); db.close(); };
-    r.onerror = () => { reject(r.error); db.close(); };
-  });
-}
-
-/* ====== File System Access API helpers ====== */
-let chosenDirHandle = null;
-const folderNameEl = document.getElementById('folderName');
-
-async function chooseFolder(){
-  if(!('showDirectoryPicker' in window)){
-    alert('Your browser does not support the File System Access API. Use the download button instead.');
-    return;
-  }
-  try{
-    const dir = await window.showDirectoryPicker();
-    const perm = await dir.requestPermission({ mode: 'readwrite' });
-    if(perm !== 'granted') alert('Folder selected but permission not granted persistently.');
-    chosenDirHandle = dir;
-    try { await idbPut(HANDLE_KEY, dir); } catch(e){ console.warn('Persist handle failed', e); }
-    folderNameEl.textContent = dir.name || 'selected';
-    alert('Folder selected. Saving to this folder will not change browser download settings.');
-  }catch(e){
-    if(e && e.name === 'AbortError') return;
-    console.error('chooseFolder error', e);
-    alert('Failed to choose folder: ' + (e && e.message || e));
-  }
-}
-
-async function restoreChosenFolder(){
-  if(!('showDirectoryPicker' in window)) return;
-  try{
-    const stored = await idbGet(HANDLE_KEY);
-    if(!stored) return;
-    chosenDirHandle = stored;
-    const perm = await chosenDirHandle.queryPermission({ mode: 'readwrite' });
-    if(perm === 'prompt') {
-      const req = await chosenDirHandle.requestPermission({ mode: 'readwrite' });
-      if(req !== 'granted') { await idbDelete(HANDLE_KEY); chosenDirHandle = null; folderNameEl.textContent = 'none'; return; }
-    } else if(perm !== 'granted') {
-      chosenDirHandle = null; folderNameEl.textContent = 'none'; return;
-    }
-    folderNameEl.textContent = chosenDirHandle.name || 'selected';
-  }catch(e){
-    console.warn('restoreChosenFolder failed', e);
-    chosenDirHandle = null;
-    folderNameEl.textContent = 'none';
-  }
-}
-
-async function saveCsvToChosenFolder(filename, csvContent){
-  if(!chosenDirHandle) throw new Error('No folder chosen');
-  const fh = await chosenDirHandle.getFileHandle(filename, { create: true });
-  const writable = await fh.createWritable();
-  await writable.write(csvContent);
-  await writable.close();
-}
-
-/* ====== QR decode from uploaded image ====== */
-async function decodeImageFile(file){
-  // ensure html5-qrcode is available
+/* ====== Decoder helper (uses html5-qrcode) ====== */
+async function decodeBlob(blob){
   if(!window.Html5Qrcode) throw new Error('Decoder library not loaded');
-  // html5-qrcode provides scanFileV2 which accepts File
+  // Html5Qrcode.scanFileV2 accepts File/Blob
+  const file = new File([blob], 'capture.jpg', { type: blob.type || 'image/jpeg' });
   const result = await Html5Qrcode.scanFileV2(file, { returnDetailedScanResult: false });
   return result.decodedText || result;
 }
 
-/* ====== Upload handler ====== */
-document.getElementById('fileInput').addEventListener('change', async (ev)=>{
+function handleDecodedText(decoded){
+  try{
+    const payload = JSON.parse(decoded);
+    for(const k of REQUIRED) if(!(k in payload)) throw new Error('Missing '+k);
+    const entry = {
+      timestamp: nowIso(),
+      materialType: payload.materialType,
+      truckId: payload.truckId,
+      driver: payload.driver || {},
+      netWeight: payload.netWeight,
+      taeWeight: payload.taeWeight,
+      materialWeight: payload.materialWeight,
+      location: payload.location,
+      raw: payload
+    };
+    addLog(entry);
+    document.getElementById('last').textContent = JSON.stringify(entry, null, 2);
+    if(navigator.vibrate) navigator.vibrate(120);
+  }catch(e){
+    document.getElementById('last').textContent = 'Decoded but invalid JSON or missing keys: ' + (e && e.message || e);
+  }
+}
+
+/* ====== Upload flow (fixed) ====== */
+const fileInput = document.getElementById('fileInput');
+document.getElementById('uploadBtn').addEventListener('click', ()=> fileInput.click());
+
+fileInput.addEventListener('change', async (ev)=>{
   const f = ev.target.files && ev.target.files[0];
   if(!f) return;
-  document.getElementById('last').textContent = 'Decoding image...';
+  document.getElementById('last').textContent = 'Decoding uploaded image...';
   try{
-    const decoded = await decodeImageFile(f);
-    // parse JSON payload and validate
-    try{
-      const payload = JSON.parse(decoded);
-      for(const k of REQUIRED) if(!(k in payload)) throw new Error('Missing '+k);
-      const entry = {
-        timestamp: nowIso(),
-        materialType: payload.materialType,
-        truckId: payload.truckId,
-        driver: payload.driver || {},
-        netWeight: payload.netWeight,
-        taeWeight: payload.taeWeight,
-        materialWeight: payload.materialWeight,
-        location: payload.location,
-        raw: payload
-      };
-      addLog(entry);
-      document.getElementById('last').textContent = JSON.stringify(entry, null, 2);
-      if(navigator.vibrate) navigator.vibrate(120);
-    }catch(parseErr){
-      document.getElementById('last').textContent = 'QR decoded but JSON invalid: ' + (parseErr && parseErr.message || parseErr);
-    }
+    const decoded = await decodeBlob(f);
+    handleDecodedText(decoded);
   }catch(err){
-    document.getElementById('last').textContent = 'Image decode failed: ' + (err && err.message || err);
-    console.error('decode error', err);
-  } finally {
-    ev.target.value = '';
-  }
+    document.getElementById('last').textContent = 'Upload decode failed: ' + (err && err.message || err);
+    console.error(err);
+  } finally { ev.target.value = ''; }
 });
 
-/* ====== Save / export actions ====== */
+/* ====== Camera capture flow ====== */
+let stream = null;
+const video = document.getElementById('video');
+const canvas = document.getElementById('captureCanvas');
+
+async function openCamera(){
+  document.getElementById('last').textContent = 'Opening camera...';
+  try{
+    // prefer rear camera
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+    video.srcObject = stream;
+    video.style.display = 'block';
+    document.getElementById('last').textContent = 'Camera open. Tap Take Photo to capture.';
+  }catch(e){
+    document.getElementById('last').textContent = 'Camera open failed: ' + (e && e.message || e);
+    console.error(e);
+  }
+}
+
+async function takePhoto(){
+  if(!stream){ document.getElementById('last').textContent = 'Camera not open'; return; }
+  try{
+    const w = video.videoWidth || 640;
+    const h = video.videoHeight || 480;
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, w, h);
+    // convert to blob
+    const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.9));
+    document.getElementById('last').textContent = 'Captured image — decoding...';
+    const decoded = await decodeBlob(blob);
+    handleDecodedText(decoded);
+  }catch(e){
+    document.getElementById('last').textContent = 'Capture decode failed: ' + (e && e.message || e);
+    console.error(e);
+  }
+}
+
+function closeCamera(){
+  if(stream){
+    stream.getTracks().forEach(t=>t.stop());
+    stream = null;
+  }
+  video.srcObject = null;
+  video.style.display = 'none';
+  document.getElementById('last').textContent = 'Camera closed';
+}
+
+/* ====== Save today CSV ====== */
 document.getElementById('saveToday').addEventListener('click', ()=>{
   const logs = loadLogs();
   const today = new Date().toISOString().slice(0,10);
@@ -236,41 +189,13 @@ document.getElementById('saveToday').addEventListener('click', ()=>{
   downloadFile(filename, csv);
 });
 
-document.getElementById('exportAll').addEventListener('click', ()=>{
-  const logs = loadLogs();
-  if(!logs.length){ alert('No logs'); return; }
-  const csv = logsToCsv(logs);
-  const filename = `delivery-log-all-${new Date().toISOString().slice(0,10)}.csv`;
-  downloadFile(filename, csv);
-});
-
-document.getElementById('chooseFolderBtn').addEventListener('click', chooseFolder);
-
-document.getElementById('saveTodayToFolderBtn').addEventListener('click', async ()=>{
-  const logs = loadLogs();
-  const today = new Date().toISOString().slice(0,10);
-  const todays = logs.filter(l=>l.timestamp.startsWith(today));
-  if(!todays.length){ alert('No logs for today'); return; }
-  const csv = logsToCsv(todays);
-  const filename = `delivery-log-${today}.csv`;
-  if(!('showDirectoryPicker' in window)){ alert('Folder API not supported; use download'); return; }
-  if(!chosenDirHandle){ alert('No folder chosen. Click "Choose Save Folder" first.'); return; }
-  try{
-    await saveCsvToChosenFolder(filename, csv);
-    alert('Saved to chosen folder: ' + filename);
-  }catch(e){
-    console.error('save to folder failed', e);
-    alert('Save to folder failed: ' + (e && e.message || e));
-  }
-});
+/* ====== Buttons wiring ====== */
+document.getElementById('openCamBtn').addEventListener('click', openCamera);
+document.getElementById('takePhotoBtn').addEventListener('click', takePhoto);
+document.getElementById('closeCamBtn').addEventListener('click', closeCamera);
 
 /* ====== Init ====== */
-async function init(){
-  // restore chosen folder if possible
-  try{ if('showDirectoryPicker' in window) await restoreChosenFolder(); else folderNameEl.textContent = 'not supported'; }catch(e){ console.warn(e); folderNameEl.textContent = 'none'; }
-  render();
-}
-init();
+render();
 </script>
 </body>
 </html>
