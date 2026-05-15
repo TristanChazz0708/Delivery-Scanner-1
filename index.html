@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>QR Upload + Camera Scanner — Robust Detection</title>
+  <title>Delivery QR Scanner — OneDrive Friendly</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
     body{font-family:system-ui,Roboto,Arial;margin:12px;color:#111;background:#fff}
@@ -22,7 +22,7 @@
   </style>
 </head>
 <body>
-  <h2>QR Upload + Camera Scanner — Robust Detection</h2>
+  <h2>Delivery QR Scanner — OneDrive Friendly</h2>
 
   <div class="controls">
     <button id="uploadBtn" class="secondary">Upload Photo (QR)</button>
@@ -32,7 +32,7 @@
     <button id="closeCamBtn" class="secondary">Close Camera</button>
   </div>
 
-  <div class="hint">If a photo fails, try better lighting or move closer. The script will try multiple enhancements and rotations automatically.</div>
+  <div class="hint">Upload a photo or use the camera. If the decoder library fails to load from CDN, the page will try a local fallback.</div>
 
   <video id="video" autoplay playsinline></video>
   <canvas id="canvas"></canvas>
@@ -54,6 +54,7 @@
   <div style="margin-top:8px" class="small">Optional: choose a folder to save directly (does not change browser download folder): <span id="folderName">none</span></div>
   <div style="margin-top:6px" class="controls">
     <button id="chooseFolderBtn" class="secondary">Choose Save Folder</button>
+    <button id="oneDriveHelpBtn" class="secondary">OneDrive Setup Help</button>
     <button id="saveTodayToFolderBtn" class="wide secondary">Save Today CSV to Chosen Folder</button>
   </div>
 
@@ -155,41 +156,51 @@ async function idbDelete(key){
   });
 }
 
-/* ---------- File System Access API helpers ---------- */
+/* ---------- File System Access API helpers (improved for OneDrive guidance) ---------- */
 let chosenDirHandle = null;
 const folderNameEl = document.getElementById('folderName');
 
 async function chooseFolder(){
   if(!('showDirectoryPicker' in window)){
-    alert('Your browser does not support the File System Access API. Use the download button instead.');
+    alert('Your browser does not support selecting a writable folder. Use the Download button and move the file into OneDrive, or open this page in Chrome/Edge.');
     return;
   }
+
   try{
-    const dir = await window.showDirectoryPicker();
+    // startIn is a hint; some platforms ignore it
+    const dir = await window.showDirectoryPicker({ startIn: 'documents' });
     const perm = await dir.requestPermission({ mode: 'readwrite' });
-    if(perm !== 'granted') alert('Folder selected but permission not granted persistently.');
+    if(perm !== 'granted'){
+      alert('Folder selected but persistent permission was not granted. You may need to reselect the folder later.');
+    }
     chosenDirHandle = dir;
     try { await idbPut(HANDLE_KEY, dir); } catch(e){ console.warn('Persist handle failed', e); }
     folderNameEl.textContent = dir.name || 'selected';
     alert('Folder selected. Files saved to this folder will not change your browser download settings.');
   }catch(e){
-    if(e && e.name === 'AbortError') return;
+    if(e && e.name === 'AbortError'){
+      document.getElementById('last').textContent = 'Folder selection cancelled';
+      return;
+    }
     console.error('chooseFolder error', e);
     alert('Failed to choose folder: ' + (e && e.message || e));
   }
 }
 
 async function restoreChosenFolder(){
-  if(!('showDirectoryPicker' in window)) return;
+  if(!('showDirectoryPicker' in window)){
+    folderNameEl.textContent = 'not supported';
+    return;
+  }
   try{
     const stored = await idbGet(HANDLE_KEY);
-    if(!stored) return;
+    if(!stored){ folderNameEl.textContent = 'none'; return; }
     chosenDirHandle = stored;
     const perm = await chosenDirHandle.queryPermission({ mode: 'readwrite' });
-    if(perm === 'prompt') {
+    if(perm === 'prompt'){
       const req = await chosenDirHandle.requestPermission({ mode: 'readwrite' });
-      if(req !== 'granted') { await idbDelete(HANDLE_KEY); chosenDirHandle = null; folderNameEl.textContent = 'none'; return; }
-    } else if(perm !== 'granted') {
+      if(req !== 'granted'){ await idbDelete(HANDLE_KEY); chosenDirHandle = null; folderNameEl.textContent = 'none'; return; }
+    } else if(perm !== 'granted'){
       chosenDirHandle = null; folderNameEl.textContent = 'none'; return;
     }
     folderNameEl.textContent = chosenDirHandle.name || 'selected';
@@ -208,10 +219,22 @@ async function saveCsvToChosenFolder(filename, csvContent){
   await writable.close();
 }
 
+/* Optional helper: OneDrive setup instructions for users */
+function showOneDriveInstructions(){
+  const msg = [
+    'To save directly into OneDrive:',
+    '1. Install and sign in to the OneDrive app on your device.',
+    '2. Open your device Files app and confirm OneDrive appears as a location.',
+    '3. Tap Choose Save Folder, then navigate to the OneDrive folder and select it.',
+    '4. If OneDrive does not appear, open the OneDrive app and enable file access or add it to Files (Android varies by device).',
+    'If your browser does not support folder selection, use the Download button and move the CSV into OneDrive manually.'
+  ].join('\n\n');
+  alert(msg);
+}
+
 /* ---------- Image processing helpers (contrast, rotate, crop, multi-scale) ---------- */
 function applyContrastAndBrightness(imageData, contrast = 1.2, brightness = 10){
   const d = imageData.data;
-  // contrast: 1 = no change; brightness in [-255,255]
   const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
   for(let i=0;i<d.length;i+=4){
     d[i] = clamp(factor * (d[i] - 128) + 128 + brightness);
@@ -248,14 +271,11 @@ function centerCropCanvas(sourceCanvas, cropRatio = 0.6){
 
 /* ---------- Decode attempts: multiple strategies ---------- */
 async function tryDecodeFromCanvas(canvas){
-  // ensure jsQR loaded
   await ensureJsQr();
   const ctx = canvas.getContext('2d');
   const imageData = ctx.getImageData(0,0,canvas.width,canvas.height);
-  // try with original imageData
   let code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
   if(code) return code.data;
-  // try with contrast/brightness boost
   const boosted = applyContrastAndBrightness(imageData, 1.4, 12);
   ctx.putImageData(boosted, 0, 0);
   const imageData2 = ctx.getImageData(0,0,canvas.width,canvas.height);
@@ -265,7 +285,6 @@ async function tryDecodeFromCanvas(canvas){
 }
 
 async function decodeWithMultipleStrategies(file){
-  // create base image element
   const img = await new Promise((resolve, reject) => {
     const i = new Image();
     i.onload = () => resolve(i);
@@ -273,8 +292,7 @@ async function decodeWithMultipleStrategies(file){
     i.src = URL.createObjectURL(file);
   });
 
-  // prepare a working canvas sized to preserve detail (maxDim)
-  const maxDim = 2400;
+  const maxDim = 2000; // tuned to help 12MP cameras as well
   let w = img.naturalWidth, h = img.naturalHeight;
   if(Math.max(w,h) > maxDim){
     const scale = maxDim / Math.max(w,h);
@@ -286,16 +304,10 @@ async function decodeWithMultipleStrategies(file){
   bctx.drawImage(img, 0, 0, w, h);
   URL.revokeObjectURL(img.src);
 
-  // attempt list: full image, center crop, rotated variants, smaller scales
   const attempts = [];
-
-  // full image
   attempts.push(base);
-
-  // center crop (helps when QR is centered and small)
   attempts.push(centerCropCanvas(base, 0.6));
 
-  // quadrants (in case QR is near edges)
   const quadSize = Math.round(Math.min(w,h) * 0.6);
   const quads = [
     {sx:0, sy:0}, {sx:w-quadSize, sy:0}, {sx:0, sy:h-quadSize}, {sx:w-quadSize, sy:h-quadSize}
@@ -307,11 +319,9 @@ async function decodeWithMultipleStrategies(file){
     attempts.push(c);
   });
 
-  // rotated variants of full image
   [90,180,270].forEach(angle => attempts.push(rotateCanvas(base, angle)));
 
-  // multiple scales (downscale and upscale) to help jsQR find finder patterns
-  const scales = [0.5, 0.75, 1.25];
+  const scales = [0.6, 0.8, 1.2];
   scales.forEach(s => {
     const c = document.createElement('canvas');
     c.width = Math.max(200, Math.round(w * s));
@@ -321,7 +331,6 @@ async function decodeWithMultipleStrategies(file){
     attempts.push(c);
   });
 
-  // iterate attempts and try decode
   for(let i=0;i<attempts.length;i++){
     const c = attempts[i];
     document.getElementById('last').textContent = `Decoding attempt ${i+1}/${attempts.length} (size ${c.width}x${c.height})...`;
@@ -437,6 +446,7 @@ document.getElementById('saveToday').addEventListener('click', ()=>{
 
 /* ---------- Folder save actions ---------- */
 document.getElementById('chooseFolderBtn').addEventListener('click', chooseFolder);
+document.getElementById('oneDriveHelpBtn').addEventListener('click', showOneDriveInstructions);
 
 document.getElementById('saveTodayToFolderBtn').addEventListener('click', async ()=>{
   const logs = loadLogs();
