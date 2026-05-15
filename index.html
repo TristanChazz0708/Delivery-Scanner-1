@@ -2,14 +2,13 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Delivery QR Scanner — Simple</title>
+  <title>Delivery QR Scanner — Enhanced Detection</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
     :root{
       --bg:#f6f8fb;
       --card:#ffffff;
       --primary:#0b74de;
-      --accent:#0a66c2;
       --muted:#6b7280;
       --success:#16a34a;
       --danger:#dc2626;
@@ -41,7 +40,7 @@
   <div class="wrap">
     <header>
       <h1>Delivery QR Scanner</h1>
-      <div class="muted">Upload • Camera • Share / Save</div>
+      <div class="muted">Improved detection for printed QR codes</div>
     </header>
 
     <section class="card">
@@ -52,7 +51,7 @@
         <button id="captureBtn" class="secondary">Capture</button>
         <button id="closeCamBtn" class="ghost">Close Camera</button>
       </div>
-      <div class="muted" style="margin-top:8px">Tip: For best results on lower‑MP cameras, move closer so the QR fills most of the frame.</div>
+      <div class="muted" style="margin-top:8px">Tip: printed QR codes scan best when they fill most of the frame and are well lit.</div>
       <video id="video" autoplay playsinline></video>
     </section>
 
@@ -98,16 +97,17 @@
   <div class="toast" id="toast"></div>
 
 <script>
-/* -------------------------
-   Minimal, readable JS
-   - single place for state
-   - clear helper names
-   - Web Share -> Directory -> Download fallback
-   -------------------------*/
+/* =========================
+   Enhanced QR scanner
+   - improved preprocessing for printed QR codes
+   - multiple decode attempts (grayscale, sharpen, adaptive threshold, upscale)
+   - still uses jsQR (small, fast) but preprocessing increases success on low-res prints
+   ========================= */
 
-const state = {
-  chosenDirHandle: null
-};
+const state = { chosenDirHandle: null };
+const STORAGE_KEY = 'deliveryLogs_v1';
+const REQUIRED = ['materialType','truckId','driver','netWeight','taeWeight','materialWeight','location'];
+const DB_NAME = 'scanner-handles-v1', STORE = 'handles', KEY = 'chosenDir';
 
 /* ---------- UI helpers ---------- */
 function toast(msg, ms = 3000){
@@ -119,14 +119,10 @@ function toast(msg, ms = 3000){
 }
 
 /* ---------- Storage & CSV ---------- */
-const STORAGE_KEY = 'deliveryLogs_v1';
-const REQUIRED = ['materialType','truckId','driver','netWeight','taeWeight','materialWeight','location'];
-
 function nowIso(){ return new Date().toISOString(); }
 function loadLogs(){ try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]') }catch(e){ return [] } }
 function saveLogs(l){ localStorage.setItem(STORAGE_KEY, JSON.stringify(l)) }
 function addLog(entry){ const logs = loadLogs(); logs.push(entry); saveLogs(logs); renderLogs(); }
-
 function logsToCsv(logs){
   const header = ['timestamp','materialType','truckId','driverName','driverPhone','netWeight','taeWeight','materialWeight','location','rawJson'];
   const rows = logs.map(l=>[
@@ -139,7 +135,6 @@ function downloadFile(name, content){
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
 }
-
 function renderLogs(){
   const logs = loadLogs();
   document.getElementById('count').textContent = `Total logs: ${logs.length}`;
@@ -151,14 +146,13 @@ function renderLogs(){
   });
 }
 
-/* ---------- Persist chosen folder (IndexedDB simple) ---------- */
-const DB_NAME = 'scanner-handles-v1', STORE = 'handles', KEY = 'chosenDir';
+/* ---------- IndexedDB helpers ---------- */
 function openDb(){ return new Promise((res, rej)=>{ const r = indexedDB.open(DB_NAME,1); r.onupgradeneeded = ()=> r.result.createObjectStore(STORE); r.onsuccess = ()=> res(r.result); r.onerror = ()=> rej(r.error); }); }
 async function idbPut(key, value){ const db = await openDb(); return new Promise((res, rej)=>{ const tx = db.transaction(STORE,'readwrite'); tx.objectStore(STORE).put(value, key).onsuccess = ()=>{ db.close(); res(true); }; tx.onerror = ()=>{ db.close(); rej(tx.error); }; }); }
 async function idbGet(key){ const db = await openDb(); return new Promise((res, rej)=>{ const tx = db.transaction(STORE,'readonly'); tx.objectStore(STORE).get(key).onsuccess = e=>{ db.close(); res(e.target.result); }; tx.onerror = ()=>{ db.close(); rej(tx.error); }; }); }
 async function idbDelete(key){ const db = await openDb(); return new Promise((res, rej)=>{ const tx = db.transaction(STORE,'readwrite'); tx.objectStore(STORE).delete(key).onsuccess = ()=>{ db.close(); res(true); }; tx.onerror = ()=>{ db.close(); rej(tx.error); }; }); }
 
-/* ---------- Directory picker helpers ---------- */
+/* ---------- Directory picker ---------- */
 async function chooseFolder(){
   if(!('showDirectoryPicker' in window)){ toast('Folder picker not supported in this browser'); return; }
   try{
@@ -185,21 +179,10 @@ async function restoreFolder(){
     document.getElementById('folderName').textContent = state.chosenDirHandle.name || 'selected';
   }catch(e){ console.warn(e); }
 }
-async function clearFolder(){
-  try{ await idbDelete(KEY); }catch(e){}
-  state.chosenDirHandle = null;
-  document.getElementById('folderName').textContent = 'none';
-  toast('Cleared chosen folder');
-}
-async function saveCsvToChosenFolder(filename, csv){
-  if(!state.chosenDirHandle) throw new Error('No folder chosen');
-  const fh = await state.chosenDirHandle.getFileHandle(filename, { create: true });
-  const w = await fh.createWritable();
-  await w.write(csv);
-  await w.close();
-}
+async function clearFolder(){ try{ await idbDelete(KEY); }catch(e){} state.chosenDirHandle = null; document.getElementById('folderName').textContent = 'none'; toast('Cleared chosen folder'); }
+async function saveCsvToChosenFolder(filename, csv){ if(!state.chosenDirHandle) throw new Error('No folder chosen'); const fh = await state.chosenDirHandle.getFileHandle(filename, { create: true }); const w = await fh.createWritable(); await w.write(csv); await w.close(); }
 
-/* ---------- Web Share logic (file handoff) ---------- */
+/* ---------- Web Share helper ---------- */
 async function shareFileOS(file, title='', text=''){
   if(navigator.canShare && navigator.canShare({ files: [file] })){
     try{ await navigator.share({ files: [file], title, text }); return { ok:true }; }
@@ -208,7 +191,7 @@ async function shareFileOS(file, title='', text=''){
   return { ok:false, unsupported:true };
 }
 
-/* ---------- jsQR loader + decode attempts ---------- */
+/* ---------- jsQR loader ---------- */
 async function ensureJsQr(){
   if(window.jsQR) return;
   try{
@@ -221,53 +204,187 @@ async function ensureJsQr(){
   if(!window.jsQR) throw new Error('Decoder not available');
 }
 
-function imageToCanvas(img, maxDim=2000){
-  let w = img.naturalWidth, h = img.naturalHeight;
-  if(Math.max(w,h) > maxDim){ const scale = maxDim / Math.max(w,h); w = Math.round(w*scale); h = Math.round(h*scale); }
-  const c = document.createElement('canvas'); c.width = w; c.height = h;
-  c.getContext('2d').drawImage(img,0,0,w,h);
-  return c;
-}
-function enhanceImageData(imageData, contrast=1.4, brightness=12){
-  const d = imageData.data; const factor = (259*(contrast+255))/(255*(259-contrast));
+/* ---------- Image preprocessing helpers (key improvements) ----------
+   - grayscale
+   - unsharp mask (sharpen)
+   - adaptive/local threshold (simple block threshold)
+   - upscale (bicubic-like via canvas drawImage)
+   - rotation attempts
+   These steps help printed, low-contrast, or slightly blurred QR prints.
+   --------------------------------------------------------------- */
+
+function toGrayscale(imageData){
+  const d = imageData.data;
   for(let i=0;i<d.length;i+=4){
-    d[i] = clamp(factor*(d[i]-128)+128+brightness);
-    d[i+1] = clamp(factor*(d[i+1]-128)+128+brightness);
-    d[i+2] = clamp(factor*(d[i+2]-128)+128+brightness);
+    const r=d[i], g=d[i+1], b=d[i+2];
+    const y = Math.round(0.299*r + 0.587*g + 0.114*b);
+    d[i]=d[i+1]=d[i+2]=y;
   }
   return imageData;
 }
-function clamp(v){ return Math.max(0, Math.min(255, Math.round(v))); }
 
+function unsharpMask(imageData, amount=1.0, radius=1){
+  // simple 3x3 sharpen kernel (approx)
+  const w = imageData.width, h = imageData.height;
+  const src = imageData.data;
+  const out = new Uint8ClampedArray(src.length);
+  const kernel = [-1,-1,-1,-1,16,-1,-1,-1,-1]; // strong sharpen
+  const kSum = 1;
+  for(let y=0;y<h;y++){
+    for(let x=0;x<w;x++){
+      let r=0,g=0,b=0;
+      for(let ky=-1;ky<=1;ky++){
+        for(let kx=-1;kx<=1;kx++){
+          const ix = Math.min(w-1, Math.max(0, x+kx));
+          const iy = Math.min(h-1, Math.max(0, y+ky));
+          const idx = (iy*w + ix)*4;
+          const kval = kernel[(ky+1)*3 + (kx+1)];
+          r += src[idx]*kval; g += src[idx+1]*kval; b += src[idx+2]*kval;
+        }
+      }
+      const di = (y*w + x)*4;
+      out[di]   = clamp((r/kSum)*amount + src[di]*(1-amount));
+      out[di+1] = clamp((g/kSum)*amount + src[di+1]*(1-amount));
+      out[di+2] = clamp((b/kSum)*amount + src[di+2]*(1-amount));
+      out[di+3] = src[di+3];
+    }
+  }
+  imageData.data.set(out);
+  return imageData;
+}
+
+function adaptiveThreshold(canvas, blockSize=25, C=8){
+  // simple local mean thresholding (not super optimized but effective)
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  const img = ctx.getImageData(0,0,w,h);
+  const data = img.data;
+  // compute integral image of grayscale
+  const integral = new Uint32Array((w+1)*(h+1));
+  for(let y=1;y<=h;y++){
+    let rowSum = 0;
+    for(let x=1;x<=w;x++){
+      const i = ((y-1)*w + (x-1))*4;
+      rowSum += data[i];
+      integral[y*(w+1) + x] = integral[(y-1)*(w+1) + x] + rowSum;
+    }
+  }
+  const half = Math.floor(blockSize/2);
+  for(let y=0;y<h;y++){
+    for(let x=0;x<w;x++){
+      const x1 = Math.max(0, x-half), y1 = Math.max(0, y-half);
+      const x2 = Math.min(w-1, x+half), y2 = Math.min(h-1, y+half);
+      const count = (x2 - x1 + 1)*(y2 - y1 + 1);
+      const sum = integral[(y2+1)*(w+1) + (x2+1)] - integral[(y1)*(w+1) + (x2+1)] - integral[(y2+1)*(w+1) + (x1)] + integral[(y1)*(w+1) + x1];
+      const i = (y*w + x)*4;
+      const mean = sum / count;
+      data[i] = data[i+1] = data[i+2] = (data[i] < mean - C) ? 0 : 255;
+    }
+  }
+  ctx.putImageData(img,0,0);
+  return canvas;
+}
+
+function upscaleCanvas(srcCanvas, scale){
+  const dest = document.createElement('canvas');
+  dest.width = Math.max(200, Math.round(srcCanvas.width * scale));
+  dest.height = Math.max(200, Math.round(srcCanvas.height * scale));
+  const ctx = dest.getContext('2d');
+  // use drawImage which uses browser interpolation (usually bicubic on modern browsers)
+  ctx.drawImage(srcCanvas, 0, 0, srcCanvas.width, srcCanvas.height, 0, 0, dest.width, dest.height);
+  return dest;
+}
+
+/* ---------- Try decode with multiple preprocessing passes ---------- */
 async function tryDecodeCanvas(canvas){
   await ensureJsQr();
   const ctx = canvas.getContext('2d');
-  let data = ctx.getImageData(0,0,canvas.width,canvas.height);
-  let code = jsQR(data.data, data.width, data.height, { inversionAttempts: 'attemptBoth' });
-  if(code) return code.data;
-  ctx.putImageData(enhanceImageData(data), 0, 0);
-  data = ctx.getImageData(0,0,canvas.width,canvas.height);
-  code = jsQR(data.data, data.width, data.height, { inversionAttempts: 'attemptBoth' });
-  if(code) return code.data;
+
+  // 1) raw attempt
+  try{
+    const data = ctx.getImageData(0,0,canvas.width,canvas.height);
+    let code = jsQR(data.data, data.width, data.height, { inversionAttempts: 'attemptBoth' });
+    if(code) return code.data;
+  }catch(e){ console.warn('raw attempt failed', e); }
+
+  // 2) grayscale + sharpen
+  try{
+    const img = ctx.getImageData(0,0,canvas.width,canvas.height);
+    toGrayscale(img);
+    unsharpMask(img, 0.9);
+    ctx.putImageData(img,0,0);
+    let code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'attemptBoth' });
+    if(code) return code.data;
+  }catch(e){ console.warn('grayscale+sharpen failed', e); }
+
+  // 3) adaptive threshold (local binarization)
+  try{
+    const binCanvas = document.createElement('canvas');
+    binCanvas.width = canvas.width; binCanvas.height = canvas.height;
+    binCanvas.getContext('2d').drawImage(canvas,0,0);
+    adaptiveThreshold(binCanvas, Math.max(15, Math.floor(Math.min(binCanvas.width, binCanvas.height)/40)), 8);
+    const bctx = binCanvas.getContext('2d');
+    const data = bctx.getImageData(0,0,binCanvas.width,binCanvas.height);
+    let code = jsQR(data.data, data.width, data.height, { inversionAttempts: 'attemptBoth' });
+    if(code) return code.data;
+  }catch(e){ console.warn('adaptive threshold failed', e); }
+
+  // 4) upscale + try again (helps low-res prints)
+  try{
+    const up = upscaleCanvas(canvas, 1.8);
+    const uctx = up.getContext('2d');
+    const data = uctx.getImageData(0,0,up.width,up.height);
+    let code = jsQR(data.data, data.width, data.height, { inversionAttempts: 'attemptBoth' });
+    if(code) return code.data;
+
+    // also try sharpened up
+    toGrayscale(data);
+    unsharpMask(data, 1.0);
+    uctx.putImageData(data,0,0);
+    code = jsQR(data.data, data.width, data.height, { inversionAttempts: 'attemptBoth' });
+    if(code) return code.data;
+  }catch(e){ console.warn('upscale attempts failed', e); }
+
   return null;
 }
 
+/* ---------- Robust decode routine with rotations and crops ---------- */
 async function decodeFileRobust(file){
-  const img = await new Promise((res, rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=()=>rej('image load'); i.src = URL.createObjectURL(file); });
-  const base = imageToCanvas(img, 2000);
+  const img = await new Promise((res, rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=()=>rej(new Error('image load')); i.src = URL.createObjectURL(file); });
+  const maxDim = 2000;
+  let w = img.naturalWidth, h = img.naturalHeight;
+  if(Math.max(w,h) > maxDim){ const scale = maxDim / Math.max(w,h); w = Math.round(w*scale); h = Math.round(h*scale); }
+  const base = document.createElement('canvas'); base.width = w; base.height = h; base.getContext('2d').drawImage(img,0,0,w,h);
   URL.revokeObjectURL(img.src);
-  const attempts = [base, centerCrop(base,0.6)];
-  const quad = Math.round(Math.min(base.width, base.height)*0.6);
-  const quads = [{x:0,y:0},{x:base.width-quad,y:0},{x:0,y:base.height-quad},{x:base.width-quad,y:base.height-quad}];
-  quads.forEach(q=>{ const c=document.createElement('canvas'); c.width=c.height=quad; c.getContext('2d').drawImage(base,q.x,q.y,quad,quad,0,0,quad,quad); attempts.push(c); });
-  [90,180,270].forEach(a=>attempts.push(rotateCanvas(base,a)));
-  [0.6,0.8,1.2].forEach(s=>{ const c=document.createElement('canvas'); c.width=Math.max(200,Math.round(base.width*s)); c.height=Math.max(200,Math.round(base.height*s)); c.getContext('2d').drawImage(base,0,0,base.width,base.height,0,0,c.width,c.height); attempts.push(c); });
+
+  // build attempts: full image, center crop, quadrants, rotations
+  const attempts = [];
+  attempts.push(base);
+  attempts.push(centerCrop(base, 0.7));
+
+  const quad = Math.round(Math.min(w,h)*0.6);
+  const quads = [{x:0,y:0},{x:w-quad,y:0},{x:0,y:h-quad},{x:w-quad,y:h-quad}];
+  quads.forEach(q=>{
+    const c = document.createElement('canvas'); c.width=c.height=quad; c.getContext('2d').drawImage(base,q.x,q.y,quad,quad,0,0,quad,quad); attempts.push(c);
+  });
+
+  [0,90,180,270].forEach(angle=>{
+    attempts.push(rotateCanvas(base, angle));
+  });
+
+  // try each attempt with preprocessing
   for(let i=0;i<attempts.length;i++){
-    document.getElementById('last').textContent = `Decoding attempt ${i+1}/${attempts.length} (${attempts[i].width}x${attempts[i].height})...`;
-    try{ const res = await tryDecodeCanvas(attempts[i]); if(res) return res; }catch(e){ console.warn(e); }
+    const c = attempts[i];
+    document.getElementById('last').textContent = `Decoding attempt ${i+1}/${attempts.length} (${c.width}x${c.height})...`;
+    try{
+      const res = await tryDecodeCanvas(c);
+      if(res) return res;
+    }catch(e){ console.warn('attempt error', e); }
   }
-  throw new Error('No QR found');
+  throw new Error('No QR code found after enhanced attempts');
 }
+
+/* ---------- small helpers ---------- */
 function centerCrop(canvas, ratio=0.6){ const w=canvas.width,h=canvas.height,cw=Math.round(w*ratio),ch=Math.round(h*ratio),sx=Math.round((w-cw)/2),sy=Math.round((h-ch)/2); const c=document.createElement('canvas'); c.width=cw;c.height=ch; c.getContext('2d').drawImage(canvas,sx,sy,cw,ch,0,0,cw,ch); return c; }
 function rotateCanvas(src, deg){ const angle=deg*Math.PI/180; const w=src.width,h=src.height; const dest=document.createElement('canvas'); dest.width = (deg%180===0)?w:h; dest.height = (deg%180===0)?h:w; const ctx=dest.getContext('2d'); ctx.translate(dest.width/2,dest.height/2); ctx.rotate(angle); ctx.drawImage(src,-w/2,-h/2); return dest; }
 
@@ -325,17 +442,14 @@ document.getElementById('downloadTodayBtn').addEventListener('click', ()=>{
   if(!todays.length){ toast('No logs for today'); return; }
   const csv = logsToCsv(todays); const filename = `delivery-log-${today}.csv`; downloadFile(filename,csv); toast('Downloaded CSV');
 });
-
 document.getElementById('chooseFolderBtn').addEventListener('click', chooseFolder);
 document.getElementById('clearFolderBtn').addEventListener('click', clearFolder);
-
 document.getElementById('saveToFolderBtn').addEventListener('click', async ()=>{
   const logs = loadLogs(); if(!logs.length){ toast('No logs to save'); return; }
   const csv = logsToCsv(logs); const filename = `delivery-log-${new Date().toISOString().slice(0,10)}.csv`;
   if(!state.chosenDirHandle){ toast('No chosen folder — choose one first'); return; }
   try{ await saveCsvToChosenFolder(filename,csv); toast('Saved to chosen folder'); }catch(e){ console.error(e); toast('Save failed'); }
 });
-
 document.getElementById('shareTodayBtn').addEventListener('click', async ()=>{
   const logs = loadLogs(); const today = new Date().toISOString().slice(0,10); const todays = logs.filter(l=>l.timestamp.startsWith(today));
   if(!todays.length){ toast('No logs for today'); return; }
@@ -343,19 +457,12 @@ document.getElementById('shareTodayBtn').addEventListener('click', async ()=>{
   const res = await shareFileOS(file, 'Delivery CSV', `Delivery CSV for ${today}`);
   if(res.ok){ toast('Shared to OS share sheet'); return; }
   if(res.cancelled){ toast('Share cancelled'); return; }
-  // fallback to chosen folder
-  if(state.chosenDirHandle){
-    try{ await saveCsvToChosenFolder(filename,csv); toast('Saved to chosen folder'); return; }catch(e){ console.warn(e); }
-  }
-  // final fallback: download
+  if(state.chosenDirHandle){ try{ await saveCsvToChosenFolder(filename,csv); toast('Saved to chosen folder'); return; }catch(e){ console.warn(e); } }
   downloadFile(filename,csv); toast('Downloaded CSV');
 });
 
 /* ---------- Init ---------- */
-(async function init(){
-  try{ await restoreFolder(); }catch(e){ console.warn(e); }
-  renderLogs();
-})();
+(async function init(){ try{ await restoreFolder(); }catch(e){ console.warn(e); } renderLogs(); })();
 </script>
 </body>
 </html>
