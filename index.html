@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Delivery QR Scanner — OneDrive Friendly</title>
+  <title>Delivery QR Scanner — OneDrive Upload</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
     body{font-family:system-ui,Roboto,Arial;margin:12px;color:#111;background:#fff}
@@ -19,10 +19,19 @@
     #folderName{font-weight:600;color:#333}
     #canvas{display:none}
     .small{font-size:13px;color:#666}
+    #onedrivePanel{border:1px dashed #ddd;padding:8px;border-radius:8px;margin-top:8px}
+    #folderList{max-height:200px;overflow:auto;border:1px solid #eee;padding:6px;border-radius:6px}
+    .folderItem{padding:6px;border-bottom:1px solid #f1f1f1;cursor:pointer}
+    .folderItem:hover{background:#f6f9ff}
   </style>
+
+  <!-- MSAL (Microsoft Authentication Library) -->
+  <script src="https://alcdn.msauth.net/browser/2.34.0/js/msal-browser.min.js"></script>
+  <!-- jsQR for QR decoding -->
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 </head>
 <body>
-  <h2>Delivery QR Scanner — OneDrive Friendly</h2>
+  <h2>Delivery QR Scanner — OneDrive Upload</h2>
 
   <div class="controls">
     <button id="uploadBtn" class="secondary">Upload Photo (QR)</button>
@@ -32,7 +41,7 @@
     <button id="closeCamBtn" class="secondary">Close Camera</button>
   </div>
 
-  <div class="hint">Upload a photo or use the camera. If the decoder library fails to load from CDN, the page will try a local fallback.</div>
+  <div class="hint">Upload a photo or use the camera. If OneDrive integration is desired, click Connect OneDrive below and sign in.</div>
 
   <video id="video" autoplay playsinline></video>
   <canvas id="canvas"></canvas>
@@ -51,34 +60,54 @@
     <button id="saveToday" class="wide">Save Today CSV (download)</button>
   </div>
 
-  <div style="margin-top:8px" class="small">Optional: choose a folder to save directly (does not change browser download folder): <span id="folderName">none</span></div>
-  <div style="margin-top:6px" class="controls">
-    <button id="chooseFolderBtn" class="secondary">Choose Save Folder</button>
-    <button id="oneDriveHelpBtn" class="secondary">OneDrive Setup Help</button>
-    <button id="saveTodayToFolderBtn" class="wide secondary">Save Today CSV to Chosen Folder</button>
+  <!-- OneDrive integration panel -->
+  <div id="onedrivePanel">
+    <div style="display:flex;gap:8px;align-items:center">
+      <button id="connectOneDrive" class="secondary">Connect OneDrive</button>
+      <div>Signed in: <span id="userName">not signed in</span></div>
+    </div>
+
+    <div style="margin-top:8px;display:flex;gap:8px">
+      <button id="listRoot" class="secondary">List Root Folders</button>
+      <button id="selectFolderBtn">Select Folder</button>
+      <div>Selected folder: <span id="folderName">none</span></div>
+    </div>
+
+    <div id="folderList" style="margin-top:8px"></div>
+
+    <div style="margin-top:8px" class="controls">
+      <button id="uploadToOneDrive" class="wide">Upload Today's CSV to Selected OneDrive Folder</button>
+    </div>
   </div>
 
 <script>
-/* ---------- Loader for jsQR (CDN then local fallback) ---------- */
-const JSQR_CDN = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
-const JSQR_LOCAL = '/js/jsQR.js'; // upload jsQR.js to this path in your repo if CDN blocked
-async function loadScript(src){
-  return new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = src; s.async = true;
-    s.onload = () => resolve();
-    s.onerror = () => reject(new Error('Failed to load ' + src));
-    document.head.appendChild(s);
-  });
-}
-async function ensureJsQr(){
-  if(window.jsQR) return;
-  try { await loadScript(JSQR_CDN); if(window.jsQR) return; } catch(e){ console.warn('CDN load failed', e); }
-  try { await loadScript(JSQR_LOCAL); if(window.jsQR) return; } catch(e){ console.warn('Local load failed', e); }
-  throw new Error('Decoder library not loaded');
-}
+/* =========================
+   Configuration (edit)
+   =========================
+   - Register an app in Azure AD (App registrations).
+   - Add platform: Single-page application (SPA) with redirect URI = your site URL.
+   - Add Microsoft Graph delegated permission: Files.ReadWrite.All (or Files.ReadWrite).
+   - Copy Application (client) ID below.
+*/
+const MSAL_CLIENT_ID = 'REPLACE_WITH_YOUR_CLIENT_ID'; // <-- set this
+const MSAL_AUTHORITY = 'https://login.microsoftonline.com/common';
+const MSAL_SCOPES = ['Files.ReadWrite.All','User.Read'];
 
-/* ---------- Storage & CSV helpers ---------- */
+/* =========================
+   MSAL setup
+   ========================= */
+const msalConfig = {
+  auth: { clientId: MSAL_CLIENT_ID, authority: MSAL_AUTHORITY, redirectUri: window.location.origin + window.location.pathname },
+  cache: { cacheLocation: "localStorage", storeAuthStateInCookie: false }
+};
+const msalInstance = new msal.PublicClientApplication(msalConfig);
+let account = null;
+let accessToken = null;
+let selectedFolder = null; // { id, name, path }
+
+/* =========================
+   Storage & CSV helpers
+   ========================= */
 const STORAGE_KEY = 'deliveryLogs_v1';
 const REQUIRED = ['materialType','truckId','driver','netWeight','taeWeight','materialWeight','location'];
 
@@ -109,130 +138,121 @@ function render(){
   });
 }
 
-/* ---------- IndexedDB helpers for folder handle persistence ---------- */
-const HANDLE_DB = 'fs-handles-v1';
-const HANDLE_STORE = 'handles';
-const HANDLE_KEY = 'chosenDir';
+/* =========================
+   OneDrive / Graph helpers
+   ========================= */
+async function signInOneDrive(){
+  if(!MSAL_CLIENT_ID || MSAL_CLIENT_ID === 'REPLACE_WITH_YOUR_CLIENT_ID'){
+    alert('Set MSAL_CLIENT_ID in the HTML to your Azure app client id before using OneDrive features.');
+    return;
+  }
+  try{
+    const loginResp = await msalInstance.loginPopup({ scopes: MSAL_SCOPES });
+    account = loginResp.account;
+    document.getElementById('userName').textContent = account.username || account.name || 'signed in';
+    // acquire token
+    const tokenResp = await msalInstance.acquireTokenSilent({ scopes: MSAL_SCOPES, account });
+    accessToken = tokenResp.accessToken;
+    console.log('acquired token silently');
+  }catch(err){
+    // fallback to interactive
+    try{
+      const tokenResp = await msalInstance.acquireTokenPopup({ scopes: MSAL_SCOPES });
+      accessToken = tokenResp.accessToken;
+      account = tokenResp.account;
+      document.getElementById('userName').textContent = account.username || account.name || 'signed in';
+    }catch(e){
+      console.error('signin error', e);
+      alert('Sign-in failed: ' + (e && e.message || e));
+    }
+  }
+}
 
-function openDb(){
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(HANDLE_DB, 1);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if(!db.objectStoreNames.contains(HANDLE_STORE)) db.createObjectStore(HANDLE_STORE);
+async function graphFetch(path, method='GET', body=null, headers={}){
+  if(!accessToken) throw new Error('Not authenticated');
+  const url = 'https://graph.microsoft.com/v1.0' + path;
+  const opts = { method, headers: Object.assign({ Authorization: 'Bearer ' + accessToken }, headers) };
+  if(body) opts.body = body;
+  const res = await fetch(url, opts);
+  if(!res.ok){
+    const txt = await res.text();
+    throw new Error('Graph error: ' + res.status + ' ' + txt);
+  }
+  return res.json ? res.json() : res;
+}
+
+async function listDriveRootChildren(){
+  // list root children (folders and files)
+  const data = await graphFetch('/me/drive/root/children?$top=200');
+  return data.value || [];
+}
+
+async function listFolderChildren(folderId){
+  const data = await graphFetch(`/me/drive/items/${folderId}/children?$top=200`);
+  return data.value || [];
+}
+
+function renderFolderList(items){
+  const container = document.getElementById('folderList');
+  container.innerHTML = '';
+  items.forEach(it=>{
+    const div = document.createElement('div');
+    div.className = 'folderItem';
+    div.textContent = `${it.name} ${it.folder ? '(folder)' : ''}`;
+    div.onclick = () => {
+      if(it.folder){
+        // set as selected folder
+        selectedFolder = { id: it.id, name: it.name, path: it.parentReference ? it.parentReference.path : '' };
+        document.getElementById('folderName').textContent = it.name;
+        alert('Selected folder: ' + it.name);
+      } else {
+        alert('Not a folder. Tap a folder to select it.');
+      }
     };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-async function idbPut(key, value){
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(HANDLE_STORE, 'readwrite');
-    const store = tx.objectStore(HANDLE_STORE);
-    const r = store.put(value, key);
-    r.onsuccess = () => { resolve(true); db.close(); };
-    r.onerror = () => { reject(r.error); db.close(); };
-  });
-}
-async function idbGet(key){
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(HANDLE_STORE, 'readonly');
-    const store = tx.objectStore(HANDLE_STORE);
-    const r = store.get(key);
-    r.onsuccess = () => { resolve(r.result); db.close(); };
-    r.onerror = () => { reject(r.error); db.close(); };
-  });
-}
-async function idbDelete(key){
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(HANDLE_STORE, 'readwrite');
-    const store = tx.objectStore(HANDLE_STORE);
-    const r = store.delete(key);
-    r.onsuccess = () => { resolve(true); db.close(); };
-    r.onerror = () => { reject(r.error); db.close(); };
+    container.appendChild(div);
   });
 }
 
-/* ---------- File System Access API helpers (improved for OneDrive guidance) ---------- */
-let chosenDirHandle = null;
-const folderNameEl = document.getElementById('folderName');
-
-async function chooseFolder(){
-  if(!('showDirectoryPicker' in window)){
-    alert('Your browser does not support selecting a writable folder. Use the Download button and move the file into OneDrive, or open this page in Chrome/Edge.');
-    return;
-  }
-
+async function pickAndListRoot(){
   try{
-    // startIn is a hint; some platforms ignore it
-    const dir = await window.showDirectoryPicker({ startIn: 'documents' });
-    const perm = await dir.requestPermission({ mode: 'readwrite' });
-    if(perm !== 'granted'){
-      alert('Folder selected but persistent permission was not granted. You may need to reselect the folder later.');
-    }
-    chosenDirHandle = dir;
-    try { await idbPut(HANDLE_KEY, dir); } catch(e){ console.warn('Persist handle failed', e); }
-    folderNameEl.textContent = dir.name || 'selected';
-    alert('Folder selected. Files saved to this folder will not change your browser download settings.');
+    if(!accessToken) await signInOneDrive();
+    const items = await listDriveRootChildren();
+    renderFolderList(items);
+    document.getElementById('last').textContent = 'Listed root items. Tap a folder to select it.';
   }catch(e){
-    if(e && e.name === 'AbortError'){
-      document.getElementById('last').textContent = 'Folder selection cancelled';
-      return;
-    }
-    console.error('chooseFolder error', e);
-    alert('Failed to choose folder: ' + (e && e.message || e));
+    console.error(e);
+    alert('Failed to list OneDrive root: ' + (e && e.message || e));
   }
 }
 
-async function restoreChosenFolder(){
-  if(!('showDirectoryPicker' in window)){
-    folderNameEl.textContent = 'not supported';
-    return;
+async function uploadCsvToOneDriveFolder(filename, csvContent){
+  if(!selectedFolder) throw new Error('No OneDrive folder selected');
+  // Use simple upload for files < 4MB; for larger use upload session. We'll try simple first.
+  const path = `/me/drive/items/${selectedFolder.id}:/${filename}:/content`;
+  const res = await fetch('https://graph.microsoft.com/v1.0' + path, {
+    method: 'PUT',
+    headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'text/csv' },
+    body: csvContent
+  });
+  if(!res.ok){
+    const txt = await res.text();
+    throw new Error('Upload failed: ' + res.status + ' ' + txt);
   }
-  try{
-    const stored = await idbGet(HANDLE_KEY);
-    if(!stored){ folderNameEl.textContent = 'none'; return; }
-    chosenDirHandle = stored;
-    const perm = await chosenDirHandle.queryPermission({ mode: 'readwrite' });
-    if(perm === 'prompt'){
-      const req = await chosenDirHandle.requestPermission({ mode: 'readwrite' });
-      if(req !== 'granted'){ await idbDelete(HANDLE_KEY); chosenDirHandle = null; folderNameEl.textContent = 'none'; return; }
-    } else if(perm !== 'granted'){
-      chosenDirHandle = null; folderNameEl.textContent = 'none'; return;
-    }
-    folderNameEl.textContent = chosenDirHandle.name || 'selected';
-  }catch(e){
-    console.warn('restoreChosenFolder failed', e);
-    chosenDirHandle = null;
-    folderNameEl.textContent = 'none';
-  }
+  return res.json();
 }
 
-async function saveCsvToChosenFolder(filename, csvContent){
-  if(!chosenDirHandle) throw new Error('No folder chosen');
-  const fh = await chosenDirHandle.getFileHandle(filename, { create: true });
-  const writable = await fh.createWritable();
-  await writable.write(csvContent);
-  await writable.close();
+/* =========================
+   QR decode helpers (jsQR)
+   ========================= */
+function imageFileToImageElement(file){
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Image load failed'));
+    img.src = URL.createObjectURL(file);
+  });
 }
 
-/* Optional helper: OneDrive setup instructions for users */
-function showOneDriveInstructions(){
-  const msg = [
-    'To save directly into OneDrive:',
-    '1. Install and sign in to the OneDrive app on your device.',
-    '2. Open your device Files app and confirm OneDrive appears as a location.',
-    '3. Tap Choose Save Folder, then navigate to the OneDrive folder and select it.',
-    '4. If OneDrive does not appear, open the OneDrive app and enable file access or add it to Files (Android varies by device).',
-    'If your browser does not support folder selection, use the Download button and move the CSV into OneDrive manually.'
-  ].join('\n\n');
-  alert(msg);
-}
-
-/* ---------- Image processing helpers (contrast, rotate, crop, multi-scale) ---------- */
 function applyContrastAndBrightness(imageData, contrast = 1.2, brightness = 10){
   const d = imageData.data;
   const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
@@ -269,9 +289,7 @@ function centerCropCanvas(sourceCanvas, cropRatio = 0.6){
   return dest;
 }
 
-/* ---------- Decode attempts: multiple strategies ---------- */
 async function tryDecodeFromCanvas(canvas){
-  await ensureJsQr();
   const ctx = canvas.getContext('2d');
   const imageData = ctx.getImageData(0,0,canvas.width,canvas.height);
   let code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
@@ -285,14 +303,8 @@ async function tryDecodeFromCanvas(canvas){
 }
 
 async function decodeWithMultipleStrategies(file){
-  const img = await new Promise((resolve, reject) => {
-    const i = new Image();
-    i.onload = () => resolve(i);
-    i.onerror = () => reject(new Error('Image load failed'));
-    i.src = URL.createObjectURL(file);
-  });
-
-  const maxDim = 2000; // tuned to help 12MP cameras as well
+  const img = await imageFileToImageElement(file);
+  const maxDim = 2000;
   let w = img.naturalWidth, h = img.naturalHeight;
   if(Math.max(w,h) > maxDim){
     const scale = maxDim / Math.max(w,h);
@@ -344,31 +356,9 @@ async function decodeWithMultipleStrategies(file){
   throw new Error('No QR code found after multiple attempts');
 }
 
-/* ---------- Handlers for decoded text ---------- */
-function handleDecodedText(decoded){
-  try{
-    const payload = JSON.parse(decoded);
-    for(const k of REQUIRED) if(!(k in payload)) throw new Error('Missing '+k);
-    const entry = {
-      timestamp: nowIso(),
-      materialType: payload.materialType,
-      truckId: payload.truckId,
-      driver: payload.driver || {},
-      netWeight: payload.netWeight,
-      taeWeight: payload.taeWeight,
-      materialWeight: payload.materialWeight,
-      location: payload.location,
-      raw: payload
-    };
-    addLog(entry);
-    document.getElementById('last').textContent = JSON.stringify(entry, null, 2);
-    if(navigator.vibrate) navigator.vibrate(120);
-  }catch(e){
-    document.getElementById('last').textContent = 'Decoded but invalid JSON or missing keys: ' + (e && e.message || e);
-  }
-}
-
-/* ---------- Upload flow (fixed trigger) ---------- */
+/* =========================
+   Upload & camera flows
+   ========================= */
 const fileInput = document.getElementById('fileInput');
 document.getElementById('uploadBtn').addEventListener('click', ()=> fileInput.click());
 
@@ -387,9 +377,12 @@ fileInput.addEventListener('change', async (ev)=>{
   }
 });
 
-/* ---------- Camera capture flow ---------- */
 let stream = null;
 const video = document.getElementById('video');
+
+document.getElementById('openCamBtn').addEventListener('click', openCamera);
+document.getElementById('takePhotoBtn').addEventListener('click', takePhoto);
+document.getElementById('closeCamBtn').addEventListener('click', closeCamera);
 
 async function openCamera(){
   document.getElementById('last').textContent = 'Opening camera...';
@@ -433,7 +426,35 @@ function closeCamera(){
   document.getElementById('last').textContent = 'Camera closed';
 }
 
-/* ---------- Save / export actions ---------- */
+/* =========================
+   Decoded payload handling
+   ========================= */
+function handleDecodedText(decoded){
+  try{
+    const payload = JSON.parse(decoded);
+    for(const k of REQUIRED) if(!(k in payload)) throw new Error('Missing '+k);
+    const entry = {
+      timestamp: nowIso(),
+      materialType: payload.materialType,
+      truckId: payload.truckId,
+      driver: payload.driver || {},
+      netWeight: payload.netWeight,
+      taeWeight: payload.taeWeight,
+      materialWeight: payload.materialWeight,
+      location: payload.location,
+      raw: payload
+    };
+    addLog(entry);
+    document.getElementById('last').textContent = JSON.stringify(entry, null, 2);
+    if(navigator.vibrate) navigator.vibrate(120);
+  }catch(e){
+    document.getElementById('last').textContent = 'Decoded but invalid JSON or missing keys: ' + (e && e.message || e);
+  }
+}
+
+/* =========================
+   Save / export + OneDrive upload wiring
+   ========================= */
 document.getElementById('saveToday').addEventListener('click', ()=>{
   const logs = loadLogs();
   const today = new Date().toISOString().slice(0,10);
@@ -444,36 +465,54 @@ document.getElementById('saveToday').addEventListener('click', ()=>{
   downloadFile(filename, csv);
 });
 
-/* ---------- Folder save actions ---------- */
-document.getElementById('chooseFolderBtn').addEventListener('click', chooseFolder);
-document.getElementById('oneDriveHelpBtn').addEventListener('click', showOneDriveInstructions);
+document.getElementById('connectOneDrive').addEventListener('click', async ()=>{
+  await signInOneDrive();
+});
 
-document.getElementById('saveTodayToFolderBtn').addEventListener('click', async ()=>{
-  const logs = loadLogs();
-  const today = new Date().toISOString().slice(0,10);
-  const todays = logs.filter(l=>l.timestamp.startsWith(today));
-  if(!todays.length){ alert('No logs for today'); return; }
-  const csv = logsToCsv(todays);
-  const filename = `delivery-log-${today}.csv`;
-  if(!('showDirectoryPicker' in window)){ alert('Folder API not supported; use download'); return; }
-  if(!chosenDirHandle){ alert('No folder chosen. Click "Choose Save Folder" first.'); return; }
+document.getElementById('listRoot').addEventListener('click', async ()=>{
+  await pickAndListRoot();
+});
+
+document.getElementById('selectFolderBtn').addEventListener('click', async ()=>{
+  // list root and let user click a folder in the folderList; this button just prompts listing
+  await pickAndListRoot();
+});
+
+document.getElementById('uploadToOneDrive').addEventListener('click', async ()=>{
   try{
-    await saveCsvToChosenFolder(filename, csv);
-    alert('Saved to chosen folder: ' + filename);
+    if(!accessToken) await signInOneDrive();
+    if(!selectedFolder){ alert('Select a OneDrive folder first (tap a folder in the list)'); return; }
+    const logs = loadLogs();
+    if(!logs.length){ alert('No logs to upload'); return; }
+    const csv = logsToCsv(logs);
+    const filename = `delivery-log-${new Date().toISOString().slice(0,10)}.csv`;
+    document.getElementById('last').textContent = 'Uploading to OneDrive...';
+    const res = await uploadCsvToOneDriveFolder(filename, csv);
+    document.getElementById('last').textContent = 'Upload complete: ' + (res && res.name || filename);
+    alert('Uploaded to OneDrive: ' + (res && res.name || filename));
   }catch(e){
-    console.error('save to folder failed', e);
-    alert('Save to chosen folder failed: ' + (e && e.message || e));
+    console.error(e);
+    alert('OneDrive upload failed: ' + (e && e.message || e));
   }
 });
 
-/* ---------- Buttons wiring & init ---------- */
-document.getElementById('openCamBtn').addEventListener('click', openCamera);
-document.getElementById('takePhotoBtn').addEventListener('click', takePhoto);
-document.getElementById('closeCamBtn').addEventListener('click', closeCamera);
-
+/* =========================
+   Init
+   ========================= */
+render();
 (async function init(){
-  try{ if('showDirectoryPicker' in window) await restoreChosenFolder(); else folderNameEl.textContent = 'not supported'; }catch(e){ console.warn(e); folderNameEl.textContent = 'none'; }
-  render();
+  // try to restore account silently
+  try{
+    const accounts = msalInstance.getAllAccounts();
+    if(accounts && accounts.length) {
+      account = accounts[0];
+      document.getElementById('userName').textContent = account.username || account.name || 'signed in';
+      try{
+        const tokenResp = await msalInstance.acquireTokenSilent({ scopes: MSAL_SCOPES, account });
+        accessToken = tokenResp.accessToken;
+      }catch(e){ console.log('silent token failed', e); }
+    }
+  }catch(e){ console.warn(e); }
 })();
 </script>
 </body>
