@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>QR Upload + Camera Scanner — Robust Loader</title>
+  <title>QR Upload + Camera Scanner — Robust Detection</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
     body{font-family:system-ui,Roboto,Arial;margin:12px;color:#111;background:#fff}
@@ -18,10 +18,11 @@
     th,td{border:1px solid #e1e1e1;padding:6px;text-align:left}
     #folderName{font-weight:600;color:#333}
     #canvas{display:none}
+    .small{font-size:13px;color:#666}
   </style>
 </head>
 <body>
-  <h2>QR Upload + Camera Scanner</h2>
+  <h2>QR Upload + Camera Scanner — Robust Detection</h2>
 
   <div class="controls">
     <button id="uploadBtn" class="secondary">Upload Photo (QR)</button>
@@ -31,7 +32,7 @@
     <button id="closeCamBtn" class="secondary">Close Camera</button>
   </div>
 
-  <div class="hint">Upload a photo or use the camera. If the decoder library fails to load from CDN, the page will try a local fallback.</div>
+  <div class="hint">If a photo fails, try better lighting or move closer. The script will try multiple enhancements and rotations automatically.</div>
 
   <video id="video" autoplay playsinline></video>
   <canvas id="canvas"></canvas>
@@ -50,21 +51,20 @@
     <button id="saveToday" class="wide">Save Today CSV (download)</button>
   </div>
 
-  <div style="margin-top:8px">Optional: choose a folder to save directly (not changing browser download folder): <span id="folderName">none</span></div>
+  <div style="margin-top:8px" class="small">Optional: choose a folder to save directly (does not change browser download folder): <span id="folderName">none</span></div>
   <div style="margin-top:6px" class="controls">
     <button id="chooseFolderBtn" class="secondary">Choose Save Folder</button>
     <button id="saveTodayToFolderBtn" class="wide secondary">Save Today CSV to Chosen Folder</button>
   </div>
 
 <script>
-/* ---------- Robust loader for jsQR (CDN then local fallback) ---------- */
+/* ---------- Loader for jsQR (CDN then local fallback) ---------- */
 const JSQR_CDN = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
 const JSQR_LOCAL = '/js/jsQR.js'; // upload jsQR.js to this path in your repo if CDN blocked
 async function loadScript(src){
   return new Promise((resolve, reject) => {
     const s = document.createElement('script');
-    s.src = src;
-    s.async = true;
+    s.src = src; s.async = true;
     s.onload = () => resolve();
     s.onerror = () => reject(new Error('Failed to load ' + src));
     document.head.appendChild(s);
@@ -208,44 +208,131 @@ async function saveCsvToChosenFolder(filename, csvContent){
   await writable.close();
 }
 
-/* ---------- Image decode using jsQR (loader ensures availability) ---------- */
-async function imageFileToImageElement(file){
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('Image load failed'));
-    img.src = URL.createObjectURL(file);
-  });
+/* ---------- Image processing helpers (contrast, rotate, crop, multi-scale) ---------- */
+function applyContrastAndBrightness(imageData, contrast = 1.2, brightness = 10){
+  const d = imageData.data;
+  // contrast: 1 = no change; brightness in [-255,255]
+  const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
+  for(let i=0;i<d.length;i+=4){
+    d[i] = clamp(factor * (d[i] - 128) + 128 + brightness);
+    d[i+1] = clamp(factor * (d[i+1] - 128) + 128 + brightness);
+    d[i+2] = clamp(factor * (d[i+2] - 128) + 128 + brightness);
+  }
+  return imageData;
+}
+function clamp(v){ return Math.max(0, Math.min(255, Math.round(v))); }
+
+function rotateCanvas(sourceCanvas, angleDeg){
+  const angle = angleDeg * Math.PI / 180;
+  const w = sourceCanvas.width, h = sourceCanvas.height;
+  const dest = document.createElement('canvas');
+  if(angleDeg % 180 === 0){ dest.width = w; dest.height = h; }
+  else { dest.width = h; dest.height = w; }
+  const ctx = dest.getContext('2d');
+  ctx.translate(dest.width/2, dest.height/2);
+  ctx.rotate(angle);
+  ctx.drawImage(sourceCanvas, -w/2, -h/2);
+  return dest;
 }
 
-async function decodeImageFile(file){
-  // ensure decoder is available
-  try {
-    await ensureJsQr();
-  } catch(e){
-    throw new Error('Decoder library not loaded');
-  }
+function centerCropCanvas(sourceCanvas, cropRatio = 0.6){
+  const w = sourceCanvas.width, h = sourceCanvas.height;
+  const cw = Math.round(w * cropRatio), ch = Math.round(h * cropRatio);
+  const sx = Math.round((w - cw)/2), sy = Math.round((h - ch)/2);
+  const dest = document.createElement('canvas');
+  dest.width = cw; dest.height = ch;
+  const ctx = dest.getContext('2d');
+  ctx.drawImage(sourceCanvas, sx, sy, cw, ch, 0, 0, cw, ch);
+  return dest;
+}
 
-  const img = await imageFileToImageElement(file);
-  const canvas = document.getElementById('canvas');
+/* ---------- Decode attempts: multiple strategies ---------- */
+async function tryDecodeFromCanvas(canvas){
+  // ensure jsQR loaded
+  await ensureJsQr();
   const ctx = canvas.getContext('2d');
+  const imageData = ctx.getImageData(0,0,canvas.width,canvas.height);
+  // try with original imageData
+  let code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
+  if(code) return code.data;
+  // try with contrast/brightness boost
+  const boosted = applyContrastAndBrightness(imageData, 1.4, 12);
+  ctx.putImageData(boosted, 0, 0);
+  const imageData2 = ctx.getImageData(0,0,canvas.width,canvas.height);
+  code = jsQR(imageData2.data, imageData2.width, imageData2.height, { inversionAttempts: 'attemptBoth' });
+  if(code) return code.data;
+  return null;
+}
 
-  // scale down if huge
-  const maxDim = 1600;
+async function decodeWithMultipleStrategies(file){
+  // create base image element
+  const img = await new Promise((resolve, reject) => {
+    const i = new Image();
+    i.onload = () => resolve(i);
+    i.onerror = () => reject(new Error('Image load failed'));
+    i.src = URL.createObjectURL(file);
+  });
+
+  // prepare a working canvas sized to preserve detail (maxDim)
+  const maxDim = 2400;
   let w = img.naturalWidth, h = img.naturalHeight;
   if(Math.max(w,h) > maxDim){
     const scale = maxDim / Math.max(w,h);
-    w = Math.round(w * scale);
-    h = Math.round(h * scale);
+    w = Math.round(w * scale); h = Math.round(h * scale);
   }
-  canvas.width = w; canvas.height = h;
-  ctx.drawImage(img, 0, 0, w, h);
+  const base = document.createElement('canvas');
+  base.width = w; base.height = h;
+  const bctx = base.getContext('2d');
+  bctx.drawImage(img, 0, 0, w, h);
   URL.revokeObjectURL(img.src);
-  const imageData = ctx.getImageData(0,0,w,h);
 
-  const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
-  if(!code) throw new Error('No QR code found in image');
-  return code.data;
+  // attempt list: full image, center crop, rotated variants, smaller scales
+  const attempts = [];
+
+  // full image
+  attempts.push(base);
+
+  // center crop (helps when QR is centered and small)
+  attempts.push(centerCropCanvas(base, 0.6));
+
+  // quadrants (in case QR is near edges)
+  const quadSize = Math.round(Math.min(w,h) * 0.6);
+  const quads = [
+    {sx:0, sy:0}, {sx:w-quadSize, sy:0}, {sx:0, sy:h-quadSize}, {sx:w-quadSize, sy:h-quadSize}
+  ];
+  quads.forEach(q=>{
+    const c = document.createElement('canvas'); c.width = quadSize; c.height = quadSize;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(base, q.sx, q.sy, quadSize, quadSize, 0, 0, quadSize, quadSize);
+    attempts.push(c);
+  });
+
+  // rotated variants of full image
+  [90,180,270].forEach(angle => attempts.push(rotateCanvas(base, angle)));
+
+  // multiple scales (downscale and upscale) to help jsQR find finder patterns
+  const scales = [0.5, 0.75, 1.25];
+  scales.forEach(s => {
+    const c = document.createElement('canvas');
+    c.width = Math.max(200, Math.round(w * s));
+    c.height = Math.max(200, Math.round(h * s));
+    const ctx = c.getContext('2d');
+    ctx.drawImage(base, 0, 0, w, h, 0, 0, c.width, c.height);
+    attempts.push(c);
+  });
+
+  // iterate attempts and try decode
+  for(let i=0;i<attempts.length;i++){
+    const c = attempts[i];
+    document.getElementById('last').textContent = `Decoding attempt ${i+1}/${attempts.length} (size ${c.width}x${c.height})...`;
+    try{
+      const res = await tryDecodeFromCanvas(c);
+      if(res) return res;
+    }catch(e){
+      console.warn('attempt decode error', e);
+    }
+  }
+  throw new Error('No QR code found after multiple attempts');
 }
 
 /* ---------- Handlers for decoded text ---------- */
@@ -279,9 +366,9 @@ document.getElementById('uploadBtn').addEventListener('click', ()=> fileInput.cl
 fileInput.addEventListener('change', async (ev)=>{
   const f = ev.target.files && ev.target.files[0];
   if(!f) return;
-  document.getElementById('last').textContent = 'Decoding uploaded image...';
+  document.getElementById('last').textContent = 'Starting robust decode of uploaded image...';
   try{
-    const decoded = await decodeImageFile(f);
+    const decoded = await decodeWithMultipleStrategies(f);
     handleDecodedText(decoded);
   }catch(err){
     document.getElementById('last').textContent = 'Upload decode failed: ' + (err && err.message || err);
@@ -311,15 +398,15 @@ async function openCamera(){
 async function takePhoto(){
   if(!stream){ document.getElementById('last').textContent = 'Camera not open'; return; }
   try{
-    const w = video.videoWidth || 640;
-    const h = video.videoHeight || 480;
+    const w = video.videoWidth || 1280;
+    const h = video.videoHeight || 720;
     const canvas = document.getElementById('canvas');
     canvas.width = w; canvas.height = h;
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, w, h);
-    const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.9));
-    document.getElementById('last').textContent = 'Captured image — decoding...';
-    const decoded = await decodeImageFile(blob);
+    const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.95));
+    document.getElementById('last').textContent = 'Captured image — starting robust decode...';
+    const decoded = await decodeWithMultipleStrategies(blob);
     handleDecodedText(decoded);
   }catch(e){
     document.getElementById('last').textContent = 'Capture decode failed: ' + (e && e.message || e);
