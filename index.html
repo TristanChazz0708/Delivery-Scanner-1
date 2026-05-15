@@ -6,22 +6,26 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <script src="https://unpkg.com/html5-qrcode@2.3.8/minified/html5-qrcode.min.js"></script>
   <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:12px;color:#111}
+    :root{--primary:#0078d4;--muted:#6c757d}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:12px;color:#111;background:#fff}
     h1{font-size:18px;margin:6px 0}
-    #reader{width:100%;max-width:640px;height:auto;margin:8px auto;border-radius:8px;overflow:hidden}
+    #reader{width:100%;max-width:720px;height:auto;margin:8px auto;border-radius:8px;overflow:hidden;background:#000}
     .controls{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
-    button{flex:1 1 48%;padding:12px;border-radius:8px;border:none;background:#0078d4;color:#fff;font-size:16px}
-    button.secondary{background:#6c757d}
+    button{flex:1 1 48%;padding:12px;border-radius:8px;border:none;background:var(--primary);color:#fff;font-size:16px}
+    button.secondary{background:var(--muted)}
+    .wide{flex:1 1 100%}
     pre{background:#f6f6f6;padding:8px;border-radius:6px;max-height:180px;overflow:auto}
     table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px}
     th,td{border:1px solid #e1e1e1;padding:6px;text-align:left}
     .big{font-size:15px;padding:14px}
     #status{margin-top:6px;font-weight:600}
     input[type=file]{display:none}
+    .hint{font-size:13px;color:#444;margin-top:6px}
   </style>
 </head>
 <body>
   <h1>Delivery QR Scanner</h1>
+
   <div id="reader"></div>
 
   <div class="controls">
@@ -32,7 +36,8 @@
     <input id="fileInput" type="file" accept="image/*" capture="environment">
   </div>
 
-  <div id="status">Status: <span id="online">—</span></div>
+  <div id="status">Status: <span id="online">—</span> · <span id="cameraStatus">Camera: idle</span></div>
+  <div class="hint">If the camera prompt doesn't appear, open Chrome site settings → Camera → Allow for this site.</div>
 
   <h2>Last Scan</h2>
   <pre id="last">No scans yet</pre>
@@ -42,20 +47,20 @@
   <table id="logTable"><thead><tr><th>Time</th><th>Material</th><th>Truck</th><th>Driver</th><th>Net</th><th>Location</th></tr></thead><tbody></tbody></table>
 
   <div style="margin-top:10px" class="controls">
-    <button id="saveToday" class="big">Save Today CSV</button>
-    <button id="exportAll" class="big secondary">Download All CSV</button>
+    <button id="saveToday" class="big wide">Save Today CSV</button>
+    <button id="exportAll" class="big secondary wide">Download All CSV</button>
   </div>
 
 <script>
-/* Minimal offline scanner for Android */
+/* ====== Config ====== */
 const STORAGE_KEY = 'deliveryLogs_v1';
 const REQUIRED = ['materialType','truckId','driver','netWeight','taeWeight','materialWeight','location'];
 
+/* ====== Utilities ====== */
 function nowIso(){ return new Date().toISOString(); }
-function loadLogs(){ try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]') }catch(e){return[]} }
+function loadLogs(){ try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]') }catch(e){ return [] } }
 function saveLogs(l){ localStorage.setItem(STORAGE_KEY, JSON.stringify(l)) }
-function addLog(e){ const l=loadLogs(); l.push(e); saveLogs(l); render(); }
-
+function addLog(e){ const l = loadLogs(); l.push(e); saveLogs(l); render(); }
 function logsToCsv(logs){
   const header = ['timestamp','materialType','truckId','driverName','driverPhone','netWeight','taeWeight','materialWeight','location','rawJson'];
   const rows = logs.map(l=>[
@@ -63,13 +68,13 @@ function logsToCsv(logs){
   ]);
   return [header.join(','), ...rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(','))].join('\n');
 }
-
 function downloadFile(name, content){
   const blob = new Blob([content], {type:'text/csv'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
 }
 
+/* ====== UI render ====== */
 function render(){
   const logs = loadLogs();
   document.getElementById('count').textContent = `Total logs: ${logs.length}`;
@@ -81,97 +86,114 @@ function render(){
   });
 }
 
-/* html5-qrcode scanner */
+/* ====== Scanner logic (html5-qrcode) ====== */
 let scanner = null;
 const lastEl = document.getElementById('last');
+const cameraStatusEl = document.getElementById('cameraStatus');
+
 async function requestPermission(){
   try{
-    // explicit getUserMedia with rear camera preference to trigger prompt
+    if(location.protocol === 'file:'){
+      lastEl.textContent = 'Serve the page via HTTPS or http://localhost; file:// blocks camera permission.';
+      return;
+    }
     const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } });
     stream.getTracks().forEach(t=>t.stop());
     lastEl.textContent = 'Camera permission granted';
-    await populateCameras();
+    cameraStatusEl.textContent = 'Camera: permission granted';
   }catch(e){
     lastEl.textContent = 'Permission error: ' + (e && e.message || e);
-  }
-}
-
-async function populateCameras(){
-  try{
-    const cams = await Html5Qrcode.getCameras();
-    // no UI list here; we will pick the first rear camera if available
-    return cams;
-  }catch(e){
-    console.warn('Camera list error', e);
-    return [];
+    cameraStatusEl.textContent = 'Camera: permission denied';
   }
 }
 
 async function startCamera(){
-  if(scanner) return;
-  scanner = new Html5Qrcode("reader");
+  lastEl.textContent = '';
+  cameraStatusEl.textContent = 'Camera: starting...';
+  if(scanner){ lastEl.textContent = 'Scanner already running'; cameraStatusEl.textContent = 'Camera: running'; return; }
+  if(location.protocol === 'file:'){ lastEl.textContent = 'Serve the page via HTTPS or http://localhost; file:// blocks camera access.'; cameraStatusEl.textContent = 'Camera: unavailable'; return; }
   try{
-    // prefer environment facing camera
-    const constraints = { fps: 10, qrbox: { width: Math.min(window.innerWidth, 320), height: Math.min(window.innerWidth, 320) } };
-    // Try to get a camera id that looks like rear camera
+    // Ensure permission prompt appears if needed
+    try { await navigator.mediaDevices.getUserMedia({ video: true }).then(s=>s.getTracks().forEach(t=>t.stop())); } catch(e){ /* ignore; handled below */ }
+    scanner = new Html5Qrcode("reader");
     const cams = await Html5Qrcode.getCameras();
     let camId = cams && cams.length ? cams[0].id : null;
-    if(cams && cams.length>1){
-      // pick camera with 'back' or 'rear' in label if present
+    if(cams && cams.length > 1){
       const rear = cams.find(c=>/(back|rear|environment)/i.test(c.label));
       if(rear) camId = rear.id;
     }
-    await scanner.start(camId, constraints, decoded=>{
-      try{
-        const payload = JSON.parse(decoded);
-        for(const k of REQUIRED) if(!(k in payload)) throw new Error('Missing '+k);
-        const entry = { timestamp: nowIso(), materialType: payload.materialType, truckId: payload.truckId, driver: payload.driver||{}, netWeight: payload.netWeight, taeWeight: payload.taeWeight, materialWeight: payload.materialWeight, location: payload.location, raw: payload };
-        addLog(entry);
-        lastEl.textContent = JSON.stringify(entry, null, 2);
-        if(navigator.vibrate) navigator.vibrate(120);
-      }catch(err){
-        lastEl.textContent = 'Invalid QR or parse error: ' + (err && err.message || err);
-      }
-    });
+    await scanner.start(
+      camId,
+      { fps: 10, qrbox: { width: Math.min(window.innerWidth, 320), height: Math.min(window.innerWidth, 320) } },
+      decodedText => handleDecoded(decodedText),
+      errorMsg => { /* optional per-frame errors ignored */ }
+    );
+    cameraStatusEl.textContent = 'Camera: running';
+    lastEl.textContent = 'Scanner started';
   }catch(e){
-    lastEl.textContent = 'Start failed: ' + (e && e.message || e);
     scanner = null;
+    lastEl.textContent = 'Start failed: ' + (e && e.message || e);
+    cameraStatusEl.textContent = 'Camera: failed';
+    console.error('startCamera error', e);
   }
 }
 
 async function stopCamera(){
-  if(!scanner) return;
-  try{ await scanner.stop(); scanner.clear(); scanner = null; lastEl.textContent = 'Camera stopped'; }catch(e){ lastEl.textContent = 'Stop error: '+(e&&e.message||e); scanner=null; }
+  if(!scanner){ lastEl.textContent = 'Scanner not running'; cameraStatusEl.textContent = 'Camera: idle'; return; }
+  try{
+    await scanner.stop();
+    scanner.clear();
+    scanner = null;
+    lastEl.textContent = 'Scanner stopped';
+    cameraStatusEl.textContent = 'Camera: stopped';
+  }catch(e){
+    scanner = null;
+    lastEl.textContent = 'Stop error: ' + (e && e.message || e);
+    cameraStatusEl.textContent = 'Camera: error';
+    console.error('stopCamera error', e);
+  }
 }
 
-/* File upload fallback */
+/* ====== Decoding handler ====== */
+function handleDecoded(decodedText){
+  try{
+    const payload = JSON.parse(decodedText);
+    for(const k of REQUIRED) if(!(k in payload)) throw new Error('Missing '+k);
+    const entry = {
+      timestamp: nowIso(),
+      materialType: payload.materialType,
+      truckId: payload.truckId,
+      driver: payload.driver || {},
+      netWeight: payload.netWeight,
+      taeWeight: payload.taeWeight,
+      materialWeight: payload.materialWeight,
+      location: payload.location,
+      raw: payload
+    };
+    addLog(entry);
+    lastEl.textContent = JSON.stringify(entry, null, 2);
+    if(navigator.vibrate) navigator.vibrate(120);
+  }catch(e){
+    lastEl.textContent = 'Invalid QR payload: ' + (e && e.message || e);
+  }
+}
+
+/* ====== Image upload fallback (static image scanning) ====== */
 document.getElementById('fileInput').addEventListener('change', async (ev)=>{
   const f = ev.target.files && ev.target.files[0];
   if(!f) return;
-  const img = document.createElement('img');
-  img.style.maxWidth = '100%';
-  const url = URL.createObjectURL(f);
-  img.src = url;
-  // use html5-qrcode's scanFileV2 for static image
   try{
     const result = await Html5Qrcode.scanFileV2(f, { returnDetailedScanResult: false });
-    // result is decoded text
     const decoded = result.decodedText || result;
-    try{
-      const payload = JSON.parse(decoded);
-      for(const k of REQUIRED) if(!(k in payload)) throw new Error('Missing '+k);
-      const entry = { timestamp: nowIso(), materialType: payload.materialType, truckId: payload.truckId, driver: payload.driver||{}, netWeight: payload.netWeight, taeWeight: payload.taeWeight, materialWeight: payload.materialWeight, location: payload.location, raw: payload };
-      addLog(entry);
-      lastEl.textContent = JSON.stringify(entry, null, 2);
-    }catch(err){
-      lastEl.textContent = 'Image decode parse error: ' + (err && err.message || err);
-    }
-  }catch(err){
-    lastEl.textContent = 'Image scan failed: ' + (err && err.message || err);
-  } finally { URL.revokeObjectURL(url); ev.target.value = ''; }
+    handleDecoded(decoded);
+  }catch(e){
+    lastEl.textContent = 'Image scan failed: ' + (e && e.message || e);
+  } finally {
+    ev.target.value = '';
+  }
 });
 
-/* Save CSV actions */
+/* ====== Save CSV actions ====== */
 document.getElementById('saveToday').addEventListener('click', ()=>{
   const logs = loadLogs();
   const today = new Date().toISOString().slice(0,10);
@@ -190,16 +212,15 @@ document.getElementById('exportAll').addEventListener('click', ()=>{
   downloadFile(filename, csv);
 });
 
-/* Buttons */
+/* ====== Buttons and status ====== */
 document.getElementById('requestBtn').addEventListener('click', requestPermission);
 document.getElementById('startBtn').addEventListener('click', startCamera);
 document.getElementById('stopBtn').addEventListener('click', stopCamera);
 
-/* Online status */
 function updateOnline(){ document.getElementById('online').textContent = navigator.onLine ? 'Online' : 'Offline'; }
 window.addEventListener('online', updateOnline); window.addEventListener('offline', updateOnline); updateOnline();
 
-/* Init */
+/* Initialize UI */
 render();
 </script>
 </body>
