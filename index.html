@@ -2,94 +2,114 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Delivery QR Scanner — Share & Save</title>
+  <title>Delivery QR Scanner — Simple</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-    :root{--primary:#0b74de;--muted:#6c757d;--bg:#fbfcfe}
-    body{font-family:Inter,system-ui,Segoe UI,Roboto,Arial;margin:12px;color:#111;background:var(--bg)}
-    header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+    :root{
+      --bg:#f6f8fb;
+      --card:#ffffff;
+      --primary:#0b74de;
+      --accent:#0a66c2;
+      --muted:#6b7280;
+      --success:#16a34a;
+      --danger:#dc2626;
+      --radius:10px;
+      --pad:12px;
+      font-family:Inter,system-ui,Roboto,Arial;
+    }
+    body{margin:12px;background:var(--bg);color:#0f172a}
+    .wrap{max-width:920px;margin:0 auto}
+    header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
     h1{font-size:18px;margin:0}
-    .controls{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
-    button{padding:10px 12px;border-radius:8px;border:none;background:var(--primary);color:#fff;font-size:15px;cursor:pointer}
-    button.secondary{background:#fff;color:var(--primary);border:1px solid #d6e6fb}
-    button.ghost{background:transparent;color:var(--muted);border:1px dashed #e6e6e6}
+    .card{background:var(--card);border-radius:var(--radius);padding:var(--pad);box-shadow:0 6px 18px rgba(11,20,40,0.06);margin-bottom:12px}
+    .controls{display:flex;flex-wrap:wrap;gap:8px}
+    button{background:var(--primary);color:#fff;border:0;padding:10px 12px;border-radius:8px;cursor:pointer;font-size:14px}
+    button.ghost{background:transparent;border:1px solid #e6eefc;color:var(--muted)}
+    button.secondary{background:#fff;color:var(--primary);border:1px solid #dbeafe}
     .wide{flex:1 1 100%}
-    .card{background:#fff;border-radius:10px;padding:12px;box-shadow:0 1px 2px rgba(16,24,40,0.04);margin-bottom:12px}
-    .hint{font-size:13px;color:var(--muted);margin-top:6px}
-    #video{width:100%;max-width:640px;border-radius:8px;background:#000;display:none}
-    table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px}
-    th,td{border:1px solid #eef2f7;padding:8px;text-align:left}
-    pre{background:#f6f8fb;padding:10px;border-radius:8px;overflow:auto;max-height:220px}
-    #folderName{font-weight:600;color:#0b74de}
-    .status{font-size:13px;color:#333;margin-top:8px}
-    .toast{position:fixed;right:16px;bottom:16px;background:#111;color:#fff;padding:10px 14px;border-radius:8px;box-shadow:0 6px 18px rgba(11,20,40,0.2);display:none}
     .muted{color:var(--muted);font-size:13px}
+    #video{width:100%;max-height:360px;border-radius:8px;background:#000;display:none}
+    pre{background:#f8fafc;padding:10px;border-radius:8px;overflow:auto;max-height:220px}
+    table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px}
+    th,td{border:1px solid #eef2ff;padding:8px;text-align:left}
+    .status{font-size:13px;color:#334155;margin-top:8px}
+    .toast{position:fixed;right:16px;bottom:16px;background:#111;color:#fff;padding:10px 14px;border-radius:8px;display:none}
     input[type=file]{display:none}
   </style>
 </head>
 <body>
-  <header>
-    <h1>Delivery QR Scanner</h1>
-    <div class="muted">Upload • Camera • Share / Save</div>
-  </header>
+  <div class="wrap">
+    <header>
+      <h1>Delivery QR Scanner</h1>
+      <div class="muted">Upload • Camera • Share / Save</div>
+    </header>
 
-  <section class="card">
-    <div class="controls">
-      <button id="uploadBtn" class="secondary">Upload Photo (QR)</button>
-      <input id="fileInput" type="file" accept="image/*" capture="environment">
-      <button id="openCamBtn">Open Camera</button>
-      <button id="takePhotoBtn" class="secondary">Take Photo</button>
-      <button id="closeCamBtn" class="ghost">Close Camera</button>
-    </div>
-    <div class="hint">Upload a photo or use the camera. The app will try multiple enhancements and rotations to decode QR images.</div>
-    <video id="video" autoplay playsinline></video>
-    <canvas id="canvas" style="display:none"></canvas>
-  </section>
+    <section class="card">
+      <div class="controls">
+        <button id="uploadBtn" class="secondary">Upload Photo</button>
+        <input id="fileInput" type="file" accept="image/*" capture="environment">
+        <button id="openCamBtn">Open Camera</button>
+        <button id="captureBtn" class="secondary">Capture</button>
+        <button id="closeCamBtn" class="ghost">Close Camera</button>
+      </div>
+      <div class="muted" style="margin-top:8px">Tip: For best results on lower‑MP cameras, move closer so the QR fills most of the frame.</div>
+      <video id="video" autoplay playsinline></video>
+    </section>
 
-  <section class="card">
-    <h3 style="margin:0 0 8px 0">Last Scan</h3>
-    <pre id="last">No scans yet</pre>
-  </section>
+    <section class="card">
+      <h3 style="margin:0 0 8px 0">Last Scan</h3>
+      <pre id="last">No scans yet</pre>
+    </section>
 
-  <section class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <h3 style="margin:0">Stored Logs</h3>
-      <div class="muted" id="count">Total logs: 0</div>
-    </div>
-    <table id="logTable" aria-live="polite">
-      <thead><tr><th>Time</th><th>Material</th><th>Truck</th><th>Net</th><th>Location</th></tr></thead>
-      <tbody></tbody>
-    </table>
-  </section>
+    <section class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h3 style="margin:0">Stored Logs</h3>
+        <div class="muted" id="count">Total logs: 0</div>
+      </div>
+      <table id="logTable" aria-live="polite">
+        <thead><tr><th>Time</th><th>Material</th><th>Truck</th><th>Net</th><th>Location</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
 
-  <section class="card">
-    <h3 style="margin:0 0 8px 0">Save & Share</h3>
+    <section class="card">
+      <h3 style="margin:0 0 8px 0">Save & Share</h3>
 
-    <div class="controls" style="align-items:center">
-      <button id="chooseFolderBtn" class="secondary">Choose Save Folder</button>
-      <button id="clearFolderBtn" class="ghost">Clear Folder</button>
-      <div class="muted" style="flex:1">Selected: <span id="folderName">none</span></div>
-    </div>
+      <div class="controls" style="align-items:center;margin-bottom:8px">
+        <button id="chooseFolderBtn" class="secondary">Choose Save Folder</button>
+        <button id="clearFolderBtn" class="ghost">Clear Folder</button>
+        <div class="muted" style="flex:1">Selected: <span id="folderName">none</span></div>
+      </div>
 
-    <div class="controls">
-      <button id="saveToFolderBtn" class="wide">Save To Chosen Folder (all logs)</button>
-    </div>
+      <div class="controls" style="margin-bottom:8px">
+        <button id="saveToFolderBtn" class="wide">Save All Logs To Chosen Folder</button>
+      </div>
 
-    <div class="controls">
-      <button id="shareTodayBtn" class="wide">Share / Save to Cloud (Today CSV)</button>
-    </div>
+      <div class="controls" style="margin-bottom:8px">
+        <button id="shareTodayBtn" class="wide">Share Today's CSV (OS share sheet)</button>
+      </div>
 
-    <div class="controls">
-      <button id="downloadTodayBtn" class="wide secondary">Download Today's CSV</button>
-    </div>
-
-    <div class="hint">If your device exposes OneDrive/Google Drive in the system share sheet or Files picker, use Share or Choose Save Folder to save directly into cloud storage.</div>
-  </section>
+      <div class="controls">
+        <button id="downloadTodayBtn" class="wide secondary">Download Today's CSV</button>
+      </div>
+    </section>
+  </div>
 
   <div class="toast" id="toast"></div>
 
 <script>
-/* ===== UI helpers ===== */
+/* -------------------------
+   Minimal, readable JS
+   - single place for state
+   - clear helper names
+   - Web Share -> Directory -> Download fallback
+   -------------------------*/
+
+const state = {
+  chosenDirHandle: null
+};
+
+/* ---------- UI helpers ---------- */
 function toast(msg, ms = 3000){
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -98,17 +118,15 @@ function toast(msg, ms = 3000){
   t._timeout = setTimeout(()=> t.style.display = 'none', ms);
 }
 
-/* ===== Storage & CSV helpers ===== */
+/* ---------- Storage & CSV ---------- */
 const STORAGE_KEY = 'deliveryLogs_v1';
 const REQUIRED = ['materialType','truckId','driver','netWeight','taeWeight','materialWeight','location'];
-const HANDLE_DB = 'fs-handles-v1';
-const HANDLE_STORE = 'handles';
-const HANDLE_KEY = 'chosenDir';
 
 function nowIso(){ return new Date().toISOString(); }
 function loadLogs(){ try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]') }catch(e){ return [] } }
 function saveLogs(l){ localStorage.setItem(STORAGE_KEY, JSON.stringify(l)) }
-function addLog(e){ const l = loadLogs(); l.push(e); saveLogs(l); render(); }
+function addLog(entry){ const logs = loadLogs(); logs.push(entry); saveLogs(logs); renderLogs(); }
+
 function logsToCsv(logs){
   const header = ['timestamp','materialType','truckId','driverName','driverPhone','netWeight','taeWeight','materialWeight','location','rawJson'];
   const rows = logs.map(l=>[
@@ -121,7 +139,8 @@ function downloadFile(name, content){
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
 }
-function render(){
+
+function renderLogs(){
   const logs = loadLogs();
   document.getElementById('count').textContent = `Total logs: ${logs.length}`;
   const tbody = document.querySelector('#logTable tbody'); tbody.innerHTML = '';
@@ -132,373 +151,160 @@ function render(){
   });
 }
 
-/* ===== IndexedDB helpers for persisting directory handle ===== */
-function openDb(){
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(HANDLE_DB, 1);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if(!db.objectStoreNames.contains(HANDLE_STORE)) db.createObjectStore(HANDLE_STORE);
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-async function idbPut(key, value){
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(HANDLE_STORE, 'readwrite');
-    const store = tx.objectStore(HANDLE_STORE);
-    const r = store.put(value, key);
-    r.onsuccess = () => { resolve(true); db.close(); };
-    r.onerror = () => { reject(r.error); db.close(); };
-  });
-}
-async function idbGet(key){
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(HANDLE_STORE, 'readonly');
-    const store = tx.objectStore(HANDLE_STORE);
-    const r = store.get(key);
-    r.onsuccess = () => { resolve(r.result); db.close(); };
-    r.onerror = () => { reject(r.error); db.close(); };
-  });
-}
-async function idbDelete(key){
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(HANDLE_STORE, 'readwrite');
-    const store = tx.objectStore(HANDLE_STORE);
-    const r = store.delete(key);
-    r.onsuccess = () => { resolve(true); db.close(); };
-    r.onerror = () => { reject(r.error); db.close(); };
-  });
-}
+/* ---------- Persist chosen folder (IndexedDB simple) ---------- */
+const DB_NAME = 'scanner-handles-v1', STORE = 'handles', KEY = 'chosenDir';
+function openDb(){ return new Promise((res, rej)=>{ const r = indexedDB.open(DB_NAME,1); r.onupgradeneeded = ()=> r.result.createObjectStore(STORE); r.onsuccess = ()=> res(r.result); r.onerror = ()=> rej(r.error); }); }
+async function idbPut(key, value){ const db = await openDb(); return new Promise((res, rej)=>{ const tx = db.transaction(STORE,'readwrite'); tx.objectStore(STORE).put(value, key).onsuccess = ()=>{ db.close(); res(true); }; tx.onerror = ()=>{ db.close(); rej(tx.error); }; }); }
+async function idbGet(key){ const db = await openDb(); return new Promise((res, rej)=>{ const tx = db.transaction(STORE,'readonly'); tx.objectStore(STORE).get(key).onsuccess = e=>{ db.close(); res(e.target.result); }; tx.onerror = ()=>{ db.close(); rej(tx.error); }; }); }
+async function idbDelete(key){ const db = await openDb(); return new Promise((res, rej)=>{ const tx = db.transaction(STORE,'readwrite'); tx.objectStore(STORE).delete(key).onsuccess = ()=>{ db.close(); res(true); }; tx.onerror = ()=>{ db.close(); rej(tx.error); }; }); }
 
-/* ===== File System Access API: choose folder, persist handle, restore handle ===== */
-let chosenDirHandle = null;
-const folderNameEl = document.getElementById('folderName');
-
+/* ---------- Directory picker helpers ---------- */
 async function chooseFolder(){
-  if(!('showDirectoryPicker' in window)){
-    toast('Folder picker not supported. Use Download or open in Chrome/Edge.');
-    return;
-  }
+  if(!('showDirectoryPicker' in window)){ toast('Folder picker not supported in this browser'); return; }
   try{
     const dir = await window.showDirectoryPicker({ startIn: 'documents' });
-    try { await dir.requestPermission({ mode: 'readwrite' }); } catch(e){ /* ignore */ }
-    chosenDirHandle = dir;
-    try { await idbPut(HANDLE_KEY, dir); } catch(e){ console.warn('Persist handle failed', e); }
-    folderNameEl.textContent = dir.name || 'selected';
-    toast('Folder selected: ' + (dir.name || 'selected'));
+    try{ await dir.requestPermission({ mode: 'readwrite' }); }catch(e){}
+    state.chosenDirHandle = dir;
+    await idbPut(KEY, dir);
+    document.getElementById('folderName').textContent = dir.name || 'selected';
+    toast('Folder selected');
   }catch(e){
     if(e && e.name === 'AbortError'){ toast('Folder selection cancelled'); return; }
-    console.error('chooseFolder error', e);
-    toast('Failed to choose folder');
+    console.error(e); toast('Failed to choose folder');
   }
 }
-
-async function restoreChosenFolder(){
-  if(!('showDirectoryPicker' in window)) { folderNameEl.textContent = 'not supported'; return; }
+async function restoreFolder(){
+  if(!('showDirectoryPicker' in window)) return;
   try{
-    const stored = await idbGet(HANDLE_KEY);
-    if(!stored){ folderNameEl.textContent = 'none'; return; }
-    chosenDirHandle = stored;
-    const perm = await chosenDirHandle.queryPermission({ mode: 'readwrite' });
-    if(perm === 'prompt'){
-      const req = await chosenDirHandle.requestPermission({ mode: 'readwrite' });
-      if(req !== 'granted'){ await idbDelete(HANDLE_KEY); chosenDirHandle = null; folderNameEl.textContent = 'none'; return; }
-    } else if(perm !== 'granted'){
-      chosenDirHandle = null; folderNameEl.textContent = 'none'; return;
-    }
-    folderNameEl.textContent = chosenDirHandle.name || 'selected';
-  }catch(e){
-    console.warn('restoreChosenFolder failed', e);
-    chosenDirHandle = null;
-    folderNameEl.textContent = 'none';
-  }
+    const stored = await idbGet(KEY);
+    if(!stored) return;
+    state.chosenDirHandle = stored;
+    const perm = await state.chosenDirHandle.queryPermission({ mode: 'readwrite' });
+    if(perm === 'prompt'){ const r = await state.chosenDirHandle.requestPermission({ mode: 'readwrite' }); if(r !== 'granted'){ await idbDelete(KEY); state.chosenDirHandle = null; return; } }
+    if(perm !== 'granted' && perm !== 'prompt'){ state.chosenDirHandle = null; return; }
+    document.getElementById('folderName').textContent = state.chosenDirHandle.name || 'selected';
+  }catch(e){ console.warn(e); }
 }
-
-async function clearChosenFolder(){
-  try{ await idbDelete(HANDLE_KEY); }catch(e){ /* ignore */ }
-  chosenDirHandle = null;
-  folderNameEl.textContent = 'none';
+async function clearFolder(){
+  try{ await idbDelete(KEY); }catch(e){}
+  state.chosenDirHandle = null;
+  document.getElementById('folderName').textContent = 'none';
   toast('Cleared chosen folder');
 }
-
-async function saveCsvToChosenFolder(filename, csvContent){
-  if(!chosenDirHandle) throw new Error('No folder chosen');
-  const fh = await chosenDirHandle.getFileHandle(filename, { create: true });
-  const writable = await fh.createWritable();
-  await writable.write(csvContent);
-  await writable.close();
+async function saveCsvToChosenFolder(filename, csv){
+  if(!state.chosenDirHandle) throw new Error('No folder chosen');
+  const fh = await state.chosenDirHandle.getFileHandle(filename, { create: true });
+  const w = await fh.createWritable();
+  await w.write(csv);
+  await w.close();
 }
 
-/* ===== Web Share API share logic (extracted & robust) ===== */
-async function shareFileViaOS(file, title = 'Delivery CSV', text = '') {
-  // file: File object
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try {
-      await navigator.share({ files: [file], title, text });
-      return { ok: true, method: 'share' };
-    } catch (e) {
-      // user cancelled or share failed
-      if (e.name === 'AbortError') return { ok: false, cancelled: true };
-      console.warn('Share failed', e);
-      return { ok: false, error: e };
-    }
+/* ---------- Web Share logic (file handoff) ---------- */
+async function shareFileOS(file, title='', text=''){
+  if(navigator.canShare && navigator.canShare({ files: [file] })){
+    try{ await navigator.share({ files: [file], title, text }); return { ok:true }; }
+    catch(e){ if(e.name === 'AbortError') return { ok:false, cancelled:true }; return { ok:false, error:e }; }
   }
-  return { ok: false, unsupported: true };
+  return { ok:false, unsupported:true };
 }
 
-/* High-level: share today's CSV (uses Web Share API, then fallback to chosen folder, then download) */
-async function shareTodayCsv() {
-  const logs = loadLogs();
-  const today = new Date().toISOString().slice(0,10);
-  const todays = logs.filter(l=>l.timestamp.startsWith(today));
-  if(!todays.length){ toast('No logs for today'); return; }
-  const csv = logsToCsv(todays);
-  const filename = `delivery-log-${today}.csv`;
-  const file = new File([csv], filename, { type: 'text/csv' });
-
-  // 1) Try Web Share API
-  const shareResult = await shareFileViaOS(file, 'Delivery Logs', `Delivery CSV for ${today}`);
-  if(shareResult.ok){
-    toast('Shared to OS share sheet');
-    return;
-  }
-  if(shareResult.cancelled){
-    toast('Share cancelled');
-    return;
-  }
-
-  // 2) If Web Share unsupported or failed, try saving to chosen folder (writable)
-  if (chosenDirHandle) {
-    try {
-      await saveCsvToChosenFolder(filename, csv);
-      toast('Saved to chosen folder: ' + filename);
-      return;
-    } catch (e) {
-      console.error('save to chosen folder failed', e);
-      // fall through to download fallback
-    }
-  }
-
-  // 3) Final fallback: download
-  downloadFile(filename, csv);
-  toast('Downloaded CSV to Downloads folder');
-}
-
-/* ===== QR decode (jsQR) with robust attempts ===== */
+/* ---------- jsQR loader + decode attempts ---------- */
 async function ensureJsQr(){
   if(window.jsQR) return;
-  try {
-    await new Promise((res, rej) => {
+  try{
+    await new Promise((res, rej)=>{
       const s = document.createElement('script');
       s.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
-      s.async = true;
-      s.onload = res; s.onerror = rej;
-      document.head.appendChild(s);
+      s.async = true; s.onload = res; s.onerror = rej; document.head.appendChild(s);
     });
-  }catch(e){
-    console.warn('jsQR CDN failed to load', e);
-  }
-  if(!window.jsQR) throw new Error('Decoder library not available (jsQR).');
+  }catch(e){ console.warn('jsQR load failed', e); }
+  if(!window.jsQR) throw new Error('Decoder not available');
 }
 
-function imageFileToImageElement(file){
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('Image load failed'));
-    img.src = URL.createObjectURL(file);
-  });
+function imageToCanvas(img, maxDim=2000){
+  let w = img.naturalWidth, h = img.naturalHeight;
+  if(Math.max(w,h) > maxDim){ const scale = maxDim / Math.max(w,h); w = Math.round(w*scale); h = Math.round(h*scale); }
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  c.getContext('2d').drawImage(img,0,0,w,h);
+  return c;
 }
-function applyContrastAndBrightness(imageData, contrast = 1.2, brightness = 10){
-  const d = imageData.data;
-  const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
+function enhanceImageData(imageData, contrast=1.4, brightness=12){
+  const d = imageData.data; const factor = (259*(contrast+255))/(255*(259-contrast));
   for(let i=0;i<d.length;i+=4){
-    d[i] = clamp(factor * (d[i] - 128) + 128 + brightness);
-    d[i+1] = clamp(factor * (d[i+1] - 128) + 128 + brightness);
-    d[i+2] = clamp(factor * (d[i+2] - 128) + 128 + brightness);
+    d[i] = clamp(factor*(d[i]-128)+128+brightness);
+    d[i+1] = clamp(factor*(d[i+1]-128)+128+brightness);
+    d[i+2] = clamp(factor*(d[i+2]-128)+128+brightness);
   }
   return imageData;
 }
 function clamp(v){ return Math.max(0, Math.min(255, Math.round(v))); }
-function rotateCanvas(sourceCanvas, angleDeg){
-  const angle = angleDeg * Math.PI / 180;
-  const w = sourceCanvas.width, h = sourceCanvas.height;
-  const dest = document.createElement('canvas');
-  if(angleDeg % 180 === 0){ dest.width = w; dest.height = h; }
-  else { dest.width = h; dest.height = w; }
-  const ctx = dest.getContext('2d');
-  ctx.translate(dest.width/2, dest.height/2);
-  ctx.rotate(angle);
-  ctx.drawImage(sourceCanvas, -w/2, -h/2);
-  return dest;
-}
-function centerCropCanvas(sourceCanvas, cropRatio = 0.6){
-  const w = sourceCanvas.width, h = sourceCanvas.height;
-  const cw = Math.round(w * cropRatio), ch = Math.round(h * cropRatio);
-  const sx = Math.round((w - cw)/2), sy = Math.round((h - ch)/2);
-  const dest = document.createElement('canvas');
-  dest.width = cw; dest.height = ch;
-  const ctx = dest.getContext('2d');
-  ctx.drawImage(sourceCanvas, sx, sy, cw, ch, 0, 0, cw, ch);
-  return dest;
-}
-async function tryDecodeFromCanvas(canvas){
+
+async function tryDecodeCanvas(canvas){
   await ensureJsQr();
   const ctx = canvas.getContext('2d');
-  const imageData = ctx.getImageData(0,0,canvas.width,canvas.height);
-  let code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
+  let data = ctx.getImageData(0,0,canvas.width,canvas.height);
+  let code = jsQR(data.data, data.width, data.height, { inversionAttempts: 'attemptBoth' });
   if(code) return code.data;
-  const boosted = applyContrastAndBrightness(imageData, 1.4, 12);
-  ctx.putImageData(boosted, 0, 0);
-  const imageData2 = ctx.getImageData(0,0,canvas.width,canvas.height);
-  code = jsQR(imageData2.data, imageData2.width, imageData2.height, { inversionAttempts: 'attemptBoth' });
+  ctx.putImageData(enhanceImageData(data), 0, 0);
+  data = ctx.getImageData(0,0,canvas.width,canvas.height);
+  code = jsQR(data.data, data.width, data.height, { inversionAttempts: 'attemptBoth' });
   if(code) return code.data;
   return null;
 }
-async function decodeWithMultipleStrategies(file){
-  const img = await imageFileToImageElement(file);
-  const maxDim = 2000;
-  let w = img.naturalWidth, h = img.naturalHeight;
-  if(Math.max(w,h) > maxDim){
-    const scale = maxDim / Math.max(w,h);
-    w = Math.round(w * scale); h = Math.round(h * scale);
-  }
-  const base = document.createElement('canvas');
-  base.width = w; base.height = h;
-  const bctx = base.getContext('2d');
-  bctx.drawImage(img, 0, 0, w, h);
+
+async function decodeFileRobust(file){
+  const img = await new Promise((res, rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=()=>rej('image load'); i.src = URL.createObjectURL(file); });
+  const base = imageToCanvas(img, 2000);
   URL.revokeObjectURL(img.src);
-
-  const attempts = [];
-  attempts.push(base);
-  attempts.push(centerCropCanvas(base, 0.6));
-
-  const quadSize = Math.round(Math.min(w,h) * 0.6);
-  const quads = [
-    {sx:0, sy:0}, {sx:w-quadSize, sy:0}, {sx:0, sy:h-quadSize}, {sx:w-quadSize, sy:h-quadSize}
-  ];
-  quads.forEach(q=>{
-    const c = document.createElement('canvas'); c.width = quadSize; c.height = quadSize;
-    const ctx = c.getContext('2d');
-    ctx.drawImage(base, q.sx, q.sy, quadSize, quadSize, 0, 0, quadSize, quadSize);
-    attempts.push(c);
-  });
-
-  [90,180,270].forEach(angle => attempts.push(rotateCanvas(base, angle)));
-
-  const scales = [0.6, 0.8, 1.2];
-  scales.forEach(s => {
-    const c = document.createElement('canvas');
-    c.width = Math.max(200, Math.round(w * s));
-    c.height = Math.max(200, Math.round(h * s));
-    const ctx = c.getContext('2d');
-    ctx.drawImage(base, 0, 0, w, h, 0, 0, c.width, c.height);
-    attempts.push(c);
-  });
-
+  const attempts = [base, centerCrop(base,0.6)];
+  const quad = Math.round(Math.min(base.width, base.height)*0.6);
+  const quads = [{x:0,y:0},{x:base.width-quad,y:0},{x:0,y:base.height-quad},{x:base.width-quad,y:base.height-quad}];
+  quads.forEach(q=>{ const c=document.createElement('canvas'); c.width=c.height=quad; c.getContext('2d').drawImage(base,q.x,q.y,quad,quad,0,0,quad,quad); attempts.push(c); });
+  [90,180,270].forEach(a=>attempts.push(rotateCanvas(base,a)));
+  [0.6,0.8,1.2].forEach(s=>{ const c=document.createElement('canvas'); c.width=Math.max(200,Math.round(base.width*s)); c.height=Math.max(200,Math.round(base.height*s)); c.getContext('2d').drawImage(base,0,0,base.width,base.height,0,0,c.width,c.height); attempts.push(c); });
   for(let i=0;i<attempts.length;i++){
-    const c = attempts[i];
-    document.getElementById('last').textContent = `Decoding attempt ${i+1}/${attempts.length} (size ${c.width}x${c.height})...`;
-    try{
-      const res = await tryDecodeFromCanvas(c);
-      if(res) return res;
-    }catch(e){
-      console.warn('attempt decode error', e);
-    }
+    document.getElementById('last').textContent = `Decoding attempt ${i+1}/${attempts.length} (${attempts[i].width}x${attempts[i].height})...`;
+    try{ const res = await tryDecodeCanvas(attempts[i]); if(res) return res; }catch(e){ console.warn(e); }
   }
-  throw new Error('No QR code found after multiple attempts');
+  throw new Error('No QR found');
 }
+function centerCrop(canvas, ratio=0.6){ const w=canvas.width,h=canvas.height,cw=Math.round(w*ratio),ch=Math.round(h*ratio),sx=Math.round((w-cw)/2),sy=Math.round((h-ch)/2); const c=document.createElement('canvas'); c.width=cw;c.height=ch; c.getContext('2d').drawImage(canvas,sx,sy,cw,ch,0,0,cw,ch); return c; }
+function rotateCanvas(src, deg){ const angle=deg*Math.PI/180; const w=src.width,h=src.height; const dest=document.createElement('canvas'); dest.width = (deg%180===0)?w:h; dest.height = (deg%180===0)?h:w; const ctx=dest.getContext('2d'); ctx.translate(dest.width/2,dest.height/2); ctx.rotate(angle); ctx.drawImage(src,-w/2,-h/2); return dest; }
 
-/* ===== Upload & camera flows ===== */
+/* ---------- Upload & camera flows ---------- */
 const fileInput = document.getElementById('fileInput');
 document.getElementById('uploadBtn').addEventListener('click', ()=> fileInput.click());
-
-fileInput.addEventListener('change', async (ev)=>{
-  const f = ev.target.files && ev.target.files[0];
-  if(!f) return;
+fileInput.addEventListener('change', async e=>{
+  const f = e.target.files && e.target.files[0]; if(!f) return;
   document.getElementById('last').textContent = 'Decoding uploaded image...';
-  try{
-    const decoded = await decodeWithMultipleStrategies(f);
-    handleDecodedText(decoded);
-    toast('QR decoded');
-  }catch(err){
-    document.getElementById('last').textContent = 'Upload decode failed: ' + (err && err.message || err);
-    console.error('decode error', err);
-    toast('Decode failed');
-  } finally {
-    ev.target.value = '';
-  }
+  try{ const decoded = await decodeFileRobust(f); handleDecoded(decoded); toast('QR decoded'); } catch(err){ document.getElementById('last').textContent = 'Decode failed: '+(err.message||err); toast('Decode failed'); }
+  e.target.value = '';
 });
 
-let stream = null;
-const video = document.getElementById('video');
+let stream = null; const video = document.getElementById('video');
+document.getElementById('openCamBtn').addEventListener('click', async ()=>{
+  try{ stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode: 'environment' }, audio:false }); video.srcObject = stream; video.style.display = 'block'; toast('Camera opened'); document.getElementById('last').textContent = 'Camera open'; }catch(e){ console.error(e); toast('Camera failed'); }
+});
+document.getElementById('captureBtn').addEventListener('click', async ()=>{
+  if(!stream){ toast('Open camera first'); return; }
+  const w = video.videoWidth || 1280, h = video.videoHeight || 720;
+  const c = document.createElement('canvas'); c.width=w; c.height=h; c.getContext('2d').drawImage(video,0,0,w,h);
+  const blob = await new Promise(r=>c.toBlob(r,'image/jpeg',0.95));
+  document.getElementById('last').textContent = 'Captured — decoding...';
+  try{ const decoded = await decodeFileRobust(blob); handleDecoded(decoded); toast('Captured & decoded'); }catch(e){ document.getElementById('last').textContent = 'Decode failed: '+(e.message||e); toast('Decode failed'); }
+});
+document.getElementById('closeCamBtn').addEventListener('click', ()=>{ if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } video.srcObject=null; video.style.display='none'; toast('Camera closed'); });
 
-document.getElementById('openCamBtn').addEventListener('click', openCamera);
-document.getElementById('takePhotoBtn').addEventListener('click', takePhoto);
-document.getElementById('closeCamBtn').addEventListener('click', closeCamera);
-
-async function openCamera(){
-  document.getElementById('last').textContent = 'Opening camera...';
+/* ---------- Handle decoded JSON ---------- */
+function handleDecoded(text){
   try{
-    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
-    video.srcObject = stream;
-    video.style.display = 'block';
-    toast('Camera opened');
-    document.getElementById('last').textContent = 'Camera open. Tap Take Photo to capture.';
-  }catch(e){
-    document.getElementById('last').textContent = 'Camera open failed: ' + (e && e.message || e);
-    console.error(e);
-    toast('Camera failed');
-  }
-}
-
-async function takePhoto(){
-  if(!stream){ document.getElementById('last').textContent = 'Camera not open'; toast('Open camera first'); return; }
-  try{
-    const w = video.videoWidth || 1280;
-    const h = video.videoHeight || 720;
-    const canvas = document.getElementById('canvas');
-    canvas.width = w; canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, w, h);
-    const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.95));
-    document.getElementById('last').textContent = 'Captured image — decoding...';
-    const decoded = await decodeWithMultipleStrategies(blob);
-    handleDecodedText(decoded);
-    toast('Captured and decoded');
-  }catch(e){
-    document.getElementById('last').textContent = 'Capture decode failed: ' + (e && e.message || e);
-    console.error(e);
-    toast('Capture decode failed');
-  }
-}
-
-function closeCamera(){
-  if(stream){
-    stream.getTracks().forEach(t=>t.stop());
-    stream = null;
-  }
-  video.srcObject = null;
-  video.style.display = 'none';
-  document.getElementById('last').textContent = 'Camera closed';
-  toast('Camera closed');
-}
-
-/* ===== Decoded payload handling ===== */
-function handleDecodedText(decoded){
-  try{
-    const payload = JSON.parse(decoded);
+    const payload = JSON.parse(text);
     for(const k of REQUIRED) if(!(k in payload)) throw new Error('Missing '+k);
     const entry = {
       timestamp: nowIso(),
       materialType: payload.materialType,
       truckId: payload.truckId,
-      driver: payload.driver || {},
+      driver: payload.driver||{},
       netWeight: payload.netWeight,
       taeWeight: payload.taeWeight,
       materialWeight: payload.materialWeight,
@@ -507,513 +313,49 @@ function handleDecodedText(decoded){
     };
     addLog(entry);
     document.getElementById('last').textContent = JSON.stringify(entry, null, 2);
-    if(navigator.vibrate) navigator.vibrate(120);
   }catch(e){
-    document.getElementById('last').textContent = 'Decoded but invalid JSON or missing keys: ' + (e && e.message || e);
+    document.getElementById('last').textContent = 'Invalid QR payload: ' + (e.message||e);
     toast('Invalid QR payload');
   }
 }
 
-/* ===== Save / share wiring ===== */
+/* ---------- Save / Share wiring ---------- */
 document.getElementById('downloadTodayBtn').addEventListener('click', ()=>{
-  const logs = loadLogs();
-  const today = new Date().toISOString().slice(0,10);
-  const todays = logs.filter(l=>l.timestamp.startsWith(today));
+  const logs = loadLogs(); const today = new Date().toISOString().slice(0,10); const todays = logs.filter(l=>l.timestamp.startsWith(today));
   if(!todays.length){ toast('No logs for today'); return; }
-  const csv = logsToCsv(todays);
-  const filename = `delivery-log-${today}.csv`;
-  downloadFile(filename, csv);
-  toast('Downloaded CSV');
+  const csv = logsToCsv(todays); const filename = `delivery-log-${today}.csv`; downloadFile(filename,csv); toast('Downloaded CSV');
 });
 
 document.getElementById('chooseFolderBtn').addEventListener('click', chooseFolder);
-document.getElementById('clearFolderBtn').addEventListener('click', clearChosenFolder);
+document.getElementById('clearFolderBtn').addEventListener('click', clearFolder);
 
 document.getElementById('saveToFolderBtn').addEventListener('click', async ()=>{
-  const logs = loadLogs();
-  if(!logs.length){ toast('No logs to save'); return; }
-  const csv = logsToCsv(logs);
-  const filename = `delivery-log-${new Date().toISOString().slice(0,10)}.csv`;
-  if(!chosenDirHandle){ toast('No chosen folder — use Choose Save Folder first'); return; }
-  try{
-    await saveCsvToChosenFolder(filename, csv);
-    toast('Saved to chosen folder: ' + filename);
-  }catch(e){
-    console.error('save to folder failed', e);
-    toast('Save to chosen folder failed');
-  }
+  const logs = loadLogs(); if(!logs.length){ toast('No logs to save'); return; }
+  const csv = logsToCsv(logs); const filename = `delivery-log-${new Date().toISOString().slice(0,10)}.csv`;
+  if(!state.chosenDirHandle){ toast('No chosen folder — choose one first'); return; }
+  try{ await saveCsvToChosenFolder(filename,csv); toast('Saved to chosen folder'); }catch(e){ console.error(e); toast('Save failed'); }
 });
 
-document.getElementById('shareTodayBtn').addEventListener('click', shareTodayCsv);
+document.getElementById('shareTodayBtn').addEventListener('click', async ()=>{
+  const logs = loadLogs(); const today = new Date().toISOString().slice(0,10); const todays = logs.filter(l=>l.timestamp.startsWith(today));
+  if(!todays.length){ toast('No logs for today'); return; }
+  const csv = logsToCsv(todays); const filename = `delivery-log-${today}.csv`; const file = new File([csv], filename, { type: 'text/csv' });
+  const res = await shareFileOS(file, 'Delivery CSV', `Delivery CSV for ${today}`);
+  if(res.ok){ toast('Shared to OS share sheet'); return; }
+  if(res.cancelled){ toast('Share cancelled'); return; }
+  // fallback to chosen folder
+  if(state.chosenDirHandle){
+    try{ await saveCsvToChosenFolder(filename,csv); toast('Saved to chosen folder'); return; }catch(e){ console.warn(e); }
+  }
+  // final fallback: download
+  downloadFile(filename,csv); toast('Downloaded CSV');
+});
 
-/* ===== Init ===== */
+/* ---------- Init ---------- */
 (async function init(){
-  try{ await restoreChosenFolder(); }catch(e){ console.warn(e); }
-  render();
+  try{ await restoreFolder(); }catch(e){ console.warn(e); }
+  renderLogs();
 })();
-</script>
-</body>
-</html>
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>Delivery QR Scanner — Share to OneDrive/Drive</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <style>
-    :root{--primary:#0078d4;--muted:#6c757d}
-    body{font-family:system-ui,Roboto,Arial;margin:12px;color:#111;background:#fff}
-    h1{font-size:18px;margin-bottom:6px}
-    .controls{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
-    button{flex:1 1 48%;padding:12px;border-radius:8px;border:none;background:var(--primary);color:#fff;font-size:15px}
-    button.secondary{background:var(--muted)}
-    .wide{flex:1 1 100%}
-    pre{background:#f6f6f6;padding:8px;border-radius:6px;max-height:260px;overflow:auto}
-    #video{width:100%;max-width:640px;border-radius:8px;background:#000;display:none}
-    input[type=file]{display:none}
-    .hint{font-size:13px;color:#444;margin-top:6px}
-    table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px}
-    th,td{border:1px solid #e1e1e1;padding:6px;text-align:left}
-    #folderName{font-weight:600;color:#333}
-    #canvas{display:none}
-    .small{font-size:13px;color:#666;margin-top:6px}
-    .status{margin-top:8px;font-size:13px;color:#222}
-  </style>
-</head>
-<body>
-  <h1>Delivery QR Scanner</h1>
-
-  <div class="controls">
-    <button id="uploadBtn" class="secondary">Upload Photo (QR)</button>
-    <input id="fileInput" type="file" accept="image/*" capture="environment">
-    <button id="openCamBtn">Open Camera</button>
-    <button id="takePhotoBtn" class="secondary">Take Photo</button>
-    <button id="closeCamBtn" class="secondary">Close Camera</button>
-  </div>
-
-  <div class="hint">Upload a photo or use the camera to scan delivery codes.</div>
-
-  <video id="video" autoplay playsinline></video>
-  <canvas id="canvas"></canvas>
-
-  <h3>Last Scan</h3>
-  <pre id="last">No scans yet</pre>
-
-  <h3>Stored Logs</h3>
-  <div id="count"></div>
-  <table id="logTable">
-    <thead><tr><th>Time</th><th>Material</th><th>Truck</th><th>Net</th><th>Location</th></tr></thead>
-    <tbody></tbody>
-  </table>
-
-  <div style="margin-top:10px" class="controls">
-    <button id="saveToday" class="wide">Download Today CSV</button>
-  </div>
-
-  <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;" />
-
-  <div class="small"><b>Mobile Users:</b> Use the "Share / Save to Cloud" button below to push files directly to the OneDrive or Google Drive apps on your phone.</div>
-  
-  <div style="margin-top:8px" class="controls">
-    <button id="saveTodayToFolderBtn" class="wide">Share / Save to Cloud (OneDrive/Drive)</button>
-  </div>
-
-  <div class="small" style="margin-top:20px;"><b>Desktop Users / Fallbacks:</b> Use the system picker to set a local directory.</div>
-
-  <div style="margin-top:6px" class="controls">
-    <button id="chooseFolderBtn" class="secondary">Choose Save Location (system picker)</button>
-    <button id="openFilesAppBtn" class="secondary">Open Files App (help)</button>
-    <button id="chooseFolderFallbackBtn" class="wide">Fallback: Select Folder (read-only picker)</button>
-  </div>
-
-  <div class="status">Desktop Selected folder: <span id="folderName">none</span></div>
-
-<script>
-/* =========================
-   Simple scanner + storage
-   ========================= */
-const STORAGE_KEY = 'deliveryLogs_v1';
-const REQUIRED = ['materialType','truckId','driver','netWeight','taeWeight','materialWeight','location'];
-
-function nowIso(){ return new Date().toISOString(); }
-function loadLogs(){ try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]') }catch(e){ return [] } }
-function saveLogs(l){ localStorage.setItem(STORAGE_KEY, JSON.stringify(l)) }
-function addLog(e){ const l = loadLogs(); l.push(e); saveLogs(l); render(); }
-function logsToCsv(logs){
-  const header = ['timestamp','materialType','truckId','driverName','driverPhone','netWeight','taeWeight','materialWeight','location','rawJson'];
-  const rows = logs.map(l=>[
-    l.timestamp, l.materialType, l.truckId, (l.driver&&l.driver.name)||'', (l.driver&&l.driver.phone)||'', l.netWeight, l.taeWeight, l.materialWeight, l.location, JSON.stringify(l.raw||{})
-  ]);
-  return [header.join(','), ...rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(','))].join('\n');
-}
-function downloadFile(name, content){
-  const blob = new Blob([content], {type:'text/csv'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-}
-function render(){
-  const logs = loadLogs();
-  document.getElementById('count').textContent = `Total logs: ${logs.length}`;
-  const tbody = document.querySelector('#logTable tbody'); tbody.innerHTML = '';
-  logs.slice().reverse().forEach(l=>{
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td style="border:1px solid #e1e1e1;padding:6px">${l.timestamp}</td><td style="border:1px solid #e1e1e1;padding:6px">${l.materialType}</td><td style="border:1px solid #e1e1e1;padding:6px">${l.truckId}</td><td style="border:1px solid #e1e1e1;padding:6px">${l.netWeight}</td><td style="border:1px solid #e1e1e1;padding:6px">${l.location}</td>`;
-    tbody.appendChild(tr);
-  });
-}
-
-/* =========================
-   Folder selection helpers
-   - Primary: showDirectoryPicker (writable handle)
-   - Fallback: input[webkitdirectory] (read-only list of files)
-   ========================= */
-let chosenDirHandle = null;
-const folderNameEl = document.getElementById('folderName');
-
-// Try to open system folder picker. On Android Chrome this opens the Files app where OneDrive (if mounted) appears.
-async function chooseFolder(){
-  if(!('showDirectoryPicker' in window)){
-    alert('Folder selection not supported in this browser. Use the fallback "Select Folder (read-only)" button or open this page in Chrome/Edge.');
-    return;
-  }
-  try{
-    const dir = await window.showDirectoryPicker({ startIn: 'documents' });
-    try { await dir.requestPermission({ mode: 'readwrite' }); } catch(e){ /* ignore */ }
-    chosenDirHandle = dir;
-    folderNameEl.textContent = dir.name || 'selected';
-    document.getElementById('last').textContent = 'Folder selected: ' + (dir.name || 'selected');
-  }catch(e){
-    if(e && e.name === 'AbortError'){
-      document.getElementById('last').textContent = 'Folder selection cancelled';
-      return;
-    }
-    console.error('chooseFolder error', e);
-    alert('Failed to choose folder: ' + (e && e.message || e));
-  }
-}
-
-// Save CSV into chosen directory handle (writable)
-async function saveCsvToChosenFolder(filename, csvContent){
-  if(!chosenDirHandle) throw new Error('No folder chosen');
-  const fh = await chosenDirHandle.getFileHandle(filename, { create: true });
-  const writable = await fh.createWritable();
-  await writable.write(csvContent);
-  await writable.close();
-}
-
-// Fallback: allow user to pick a folder via input[webkitdirectory] (read-only).
-const fallbackInput = document.createElement('input');
-fallbackInput.type = 'file';
-fallbackInput.webkitdirectory = true;
-fallbackInput.style.display = 'none';
-document.body.appendChild(fallbackInput);
-
-fallbackInput.addEventListener('change', (ev)=>{
-  const files = ev.target.files;
-  if(!files || !files.length){ document.getElementById('last').textContent = 'No folder selected'; return; }
-  const rel = files[0].webkitRelativePath || files[0].name;
-  const topFolder = rel.split('/')[0];
-  folderNameEl.textContent = topFolder || 'selected (read-only)';
-  chosenDirHandle = null; // no writable handle
-  document.getElementById('last').textContent = `Read-only folder selected: ${topFolder}. Use Download to save and move file into OneDrive if needed.`;
-  fallbackInput.value = '';
-});
-
-function openFallbackFolderPicker(){
-  fallbackInput.click();
-}
-
-function openFilesAppHelp(){
-  const msg = [
-    'To select OneDrive inside the Files app:',
-    '1. Make sure OneDrive app is installed and signed in on your device.',
-    '2. Open your device Files app and confirm OneDrive appears as a location.',
-    '3. Return here and tap "Choose Save Location (system picker)". When the Files UI opens, navigate to OneDrive and select the folder you want.',
-    'If your browser does not support the writable folder picker, use the "Share / Save to Cloud" button to send the file directly to the app.'
-  ].join('\n\n');
-  alert(msg);
-}
-
-/* =========================
-   QR decoding (jsQR) + robust attempts
-   ========================= */
-// We assume jsQR is available via CDN; if blocked, user can host locally.
-function imageFileToImageElement(file){
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('Image load failed'));
-    img.src = URL.createObjectURL(file);
-  });
-}
-function applyContrastAndBrightness(imageData, contrast = 1.2, brightness = 10){
-  const d = imageData.data;
-  const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
-  for(let i=0;i<d.length;i+=4){
-    d[i] = clamp(factor * (d[i] - 128) + 128 + brightness);
-    d[i+1] = clamp(factor * (d[i+1] - 128) + 128 + brightness);
-    d[i+2] = clamp(factor * (d[i+2] - 128) + 128 + brightness);
-  }
-  return imageData;
-}
-function clamp(v){ return Math.max(0, Math.min(255, Math.round(v))); }
-function rotateCanvas(sourceCanvas, angleDeg){
-  const angle = angleDeg * Math.PI / 180;
-  const w = sourceCanvas.width, h = sourceCanvas.height;
-  const dest = document.createElement('canvas');
-  if(angleDeg % 180 === 0){ dest.width = w; dest.height = h; }
-  else { dest.width = h; dest.height = w; }
-  const ctx = dest.getContext('2d');
-  ctx.translate(dest.width/2, dest.height/2);
-  ctx.rotate(angle);
-  ctx.drawImage(sourceCanvas, -w/2, -h/2);
-  return dest;
-}
-function centerCropCanvas(sourceCanvas, cropRatio = 0.6){
-  const w = sourceCanvas.width, h = sourceCanvas.height;
-  const cw = Math.round(w * cropRatio), ch = Math.round(h * cropRatio);
-  const sx = Math.round((w - cw)/2), sy = Math.round((h - ch)/2);
-  const dest = document.createElement('canvas');
-  dest.width = cw; dest.height = ch;
-  const ctx = dest.getContext('2d');
-  ctx.drawImage(sourceCanvas, sx, sy, cw, ch, 0, 0, cw, ch);
-  return dest;
-}
-async function tryDecodeFromCanvas(canvas){
-  if(typeof jsQR === 'undefined') throw new Error('Decoder library not loaded (jsQR).');
-  const ctx = canvas.getContext('2d');
-  const imageData = ctx.getImageData(0,0,canvas.width,canvas.height);
-  let code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
-  if(code) return code.data;
-  const boosted = applyContrastAndBrightness(imageData, 1.4, 12);
-  ctx.putImageData(boosted, 0, 0);
-  const imageData2 = ctx.getImageData(0,0,canvas.width,canvas.height);
-  code = jsQR(imageData2.data, imageData2.width, imageData2.height, { inversionAttempts: 'attemptBoth' });
-  if(code) return code.data;
-  return null;
-}
-async function decodeWithMultipleStrategies(file){
-  const img = await imageFileToImageElement(file);
-  const maxDim = 2000;
-  let w = img.naturalWidth, h = img.naturalHeight;
-  if(Math.max(w,h) > maxDim){
-    const scale = maxDim / Math.max(w,h);
-    w = Math.round(w * scale); h = Math.round(h * scale);
-  }
-  const base = document.createElement('canvas');
-  base.width = w; base.height = h;
-  const bctx = base.getContext('2d');
-  bctx.drawImage(img, 0, 0, w, h);
-  URL.revokeObjectURL(img.src);
-
-  const attempts = [];
-  attempts.push(base);
-  attempts.push(centerCropCanvas(base, 0.6));
-
-  const quadSize = Math.round(Math.min(w,h) * 0.6);
-  const quads = [
-    {sx:0, sy:0}, {sx:w-quadSize, sy:0}, {sx:0, sy:h-quadSize}, {sx:w-quadSize, sy:h-quadSize}
-  ];
-  quads.forEach(q=>{
-    const c = document.createElement('canvas'); c.width = quadSize; c.height = quadSize;
-    const ctx = c.getContext('2d');
-    ctx.drawImage(base, q.sx, q.sy, quadSize, quadSize, 0, 0, quadSize, quadSize);
-    attempts.push(c);
-  });
-
-  [90,180,270].forEach(angle => attempts.push(rotateCanvas(base, angle)));
-
-  const scales = [0.6, 0.8, 1.2];
-  scales.forEach(s => {
-    const c = document.createElement('canvas');
-    c.width = Math.max(200, Math.round(w * s));
-    c.height = Math.max(200, Math.round(h * s));
-    const ctx = c.getContext('2d');
-    ctx.drawImage(base, 0, 0, w, h, 0, 0, c.width, c.height);
-    attempts.push(c);
-  });
-
-  for(let i=0;i<attempts.length;i++){
-    const c = attempts[i];
-    document.getElementById('last').textContent = `Decoding attempt ${i+1}/${attempts.length} (size ${c.width}x${c.height})...`;
-    try{
-      const res = await tryDecodeFromCanvas(c);
-      if(res) return res;
-    }catch(e){
-      console.warn('attempt decode error', e);
-    }
-  }
-  throw new Error('No QR code found after multiple attempts');
-}
-
-/* =========================
-   Upload & camera flows
-   ========================= */
-const fileInput = document.getElementById('fileInput');
-document.getElementById('uploadBtn').addEventListener('click', ()=> fileInput.click());
-
-fileInput.addEventListener('change', async (ev)=>{
-  const f = ev.target.files && ev.target.files[0];
-  if(!f) return;
-  document.getElementById('last').textContent = 'Starting robust decode of uploaded image...';
-  try{
-    const decoded = await decodeWithMultipleStrategies(f);
-    handleDecodedText(decoded);
-  }catch(err){
-    document.getElementById('last').textContent = 'Upload decode failed: ' + (err && err.message || err);
-    console.error('decode error', err);
-  } finally {
-    ev.target.value = '';
-  }
-});
-
-let stream = null;
-const video = document.getElementById('video');
-
-document.getElementById('openCamBtn').addEventListener('click', openCamera);
-document.getElementById('takePhotoBtn').addEventListener('click', takePhoto);
-document.getElementById('closeCamBtn').addEventListener('click', closeCamera);
-
-async function openCamera(){
-  document.getElementById('last').textContent = 'Opening camera...';
-  try{
-    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
-    video.srcObject = stream;
-    video.style.display = 'block';
-    document.getElementById('last').textContent = 'Camera open. Tap Take Photo to capture.';
-  }catch(e){
-    document.getElementById('last').textContent = 'Camera open failed: ' + (e && e.message || e);
-    console.error(e);
-  }
-}
-
-async function takePhoto(){
-  if(!stream){ document.getElementById('last').textContent = 'Camera not open'; return; }
-  try{
-    const w = video.videoWidth || 1280;
-    const h = video.videoHeight || 720;
-    const canvas = document.getElementById('canvas');
-    canvas.width = w; canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, w, h);
-    const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.95));
-    document.getElementById('last').textContent = 'Captured image — starting robust decode...';
-    const decoded = await decodeWithMultipleStrategies(blob);
-    handleDecodedText(decoded);
-  }catch(e){
-    document.getElementById('last').textContent = 'Capture decode failed: ' + (e && e.message || e);
-    console.error(e);
-  }
-}
-
-function closeCamera(){
-  if(stream){
-    stream.getTracks().forEach(t=>t.stop());
-    stream = null;
-  }
-  video.srcObject = null;
-  video.style.display = 'none';
-  document.getElementById('last').textContent = 'Camera closed';
-}
-
-/* =========================
-   Decoded payload handling
-   ========================= */
-function handleDecodedText(decoded){
-  try{
-    const payload = JSON.parse(decoded);
-    for(const k of REQUIRED) if(!(k in payload)) throw new Error('Missing '+k);
-    const entry = {
-      timestamp: nowIso(),
-      materialType: payload.materialType,
-      truckId: payload.truckId,
-      driver: payload.driver || {},
-      netWeight: payload.netWeight,
-      taeWeight: payload.taeWeight,
-      materialWeight: payload.materialWeight,
-      location: payload.location,
-      raw: payload
-    };
-    addLog(entry);
-    document.getElementById('last').textContent = JSON.stringify(entry, null, 2);
-    if(navigator.vibrate) navigator.vibrate(120);
-  }catch(e){
-    document.getElementById('last').textContent = 'Decoded but invalid JSON or missing keys: ' + (e && e.message || e);
-  }
-}
-
-/* =========================
-   Save / export wiring
-   ========================= */
-document.getElementById('saveToday').addEventListener('click', ()=>{
-  const logs = loadLogs();
-  const today = new Date().toISOString().slice(0,10);
-  const todays = logs.filter(l=>l.timestamp.startsWith(today));
-  if(!todays.length){ alert('No logs for today'); return; }
-  const csv = logsToCsv(todays);
-  const filename = `delivery-log-${today}.csv`;
-  downloadFile(filename, csv);
-});
-
-document.getElementById('chooseFolderBtn').addEventListener('click', chooseFolder);
-document.getElementById('openFilesAppBtn').addEventListener('click', openFilesAppHelp);
-document.getElementById('chooseFolderFallbackBtn').addEventListener('click', openFallbackFolderPicker);
-
-// UPDATED: Using Web Share API for Cloud Storages + Fallbacks
-document.getElementById('saveTodayToFolderBtn').addEventListener('click', async ()=>{
-  const logs = loadLogs();
-  const today = new Date().toISOString().slice(0,10);
-  const todays = logs.filter(l=>l.timestamp.startsWith(today));
-  
-  if(!todays.length){ 
-      alert('No logs for today'); 
-      return; 
-  }
-  
-  const csv = logsToCsv(todays);
-  const filename = `delivery-log-${today}.csv`;
-
-  // 1. Create a File object from the CSV string
-  const file = new File([csv], filename, { type: 'text/csv' });
-
-  // 2. Check if the device supports the Web Share API and file sharing
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try {
-      // 3. Trigger the native OS Share Sheet
-      await navigator.share({
-        files: [file],
-        title: 'Delivery Logs',
-        text: `Here is the delivery CSV for ${today}`
-      });
-      document.getElementById('last').textContent = 'File handed off to OS for saving/sharing.';
-    } catch (e) {
-      // If the user cancels the share sheet, an AbortError is thrown. We can ignore it.
-      if (e.name !== 'AbortError') {
-        console.error('Share failed', e);
-        alert('Sharing failed, falling back to download.');
-        downloadFile(filename, csv); // Fallback
-      }
-    }
-  } else if (chosenDirHandle) {
-    // 4. Fallback for Desktop Chrome/Edge using the Directory Picker
-    try{
-      await saveCsvToChosenFolder(filename, csv);
-      alert('Saved to chosen folder: ' + filename);
-    }catch(e){
-      console.error('save to folder failed', e);
-      alert('Save to chosen folder failed: ' + (e && e.message || e));
-    }
-  } else {
-    // 5. Ultimate fallback for unsupported browsers
-    downloadFile(filename, csv);
-    alert('Sharing not supported on this device. CSV downloaded to your local Downloads folder.');
-  }
-});
-
-/* =========================
-   Init
-   ========================= */
-render();
 </script>
 </body>
 </html>
