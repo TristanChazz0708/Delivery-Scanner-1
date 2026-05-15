@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Delivery QR Scanner — Robust Loader</title>
+  <title>QR Upload Scanner — Parse & Record</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
     :root{--primary:#0078d4;--muted:#6c757d}
@@ -12,31 +12,29 @@
     button{flex:1 1 48%;padding:12px;border-radius:8px;border:none;background:var(--primary);color:#fff;font-size:16px}
     button.secondary{background:var(--muted)}
     .wide{flex:1 1 100%}
-    pre{background:#f6f6f6;padding:8px;border-radius:6px;max-height:180px;overflow:auto}
+    pre{background:#f6f6f6;padding:8px;border-radius:6px;max-height:220px;overflow:auto}
     table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px}
     th,td{border:1px solid #e1e1e1;padding:6px;text-align:left}
     .big{font-size:15px;padding:14px}
-    #status{margin-top:6px;font-weight:600}
-    input[type=file]{display:none}
     .hint{font-size:13px;color:#444;margin-top:6px}
+    input[type=file]{display:none}
     #folderName{font-weight:600;color:#333}
   </style>
+
+  <!-- html5-qrcode CDN (loader fallback handled in script) -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/minified/html5-qrcode.min.js"></script>
 </head>
 <body>
-  <h1>Delivery QR Scanner</h1>
-
-  <div id="reader"></div>
+  <h1>QR Upload Scanner</h1>
 
   <div class="controls">
-    <button id="requestBtn" class="big">Request Camera Permission</button>
-    <button id="startBtn" class="big">Start Camera</button>
-    <button id="stopBtn" class="big secondary">Stop Camera</button>
-    <label for="fileInput" style="flex:1 1 48%"><button class="big secondary" style="width:100%">Upload Photo</button></label>
+    <label for="fileInput" style="flex:1 1 48%"><button class="big secondary" style="width:100%">Upload Photo (QR)</button></label>
     <input id="fileInput" type="file" accept="image/*" capture="environment">
+    <button id="chooseFolderBtn" class="big secondary">Choose Save Folder (optional)</button>
+    <button id="saveTodayToFolderBtn" class="big">Save Today CSV to Chosen Folder</button>
   </div>
 
-  <div id="status">Status: <span id="online">—</span> · <span id="cameraStatus">Camera: idle</span></div>
-  <div class="hint">If the camera prompt doesn't appear, open Chrome site settings → Camera → Allow for this site.</div>
+  <div id="status" class="hint">Chosen folder: <span id="folderName">none</span></div>
 
   <h2>Last Scan</h2>
   <pre id="last">No scans yet</pre>
@@ -47,60 +45,18 @@
 
   <div style="margin-top:10px" class="controls">
     <button id="saveToday" class="big">Save Today CSV (download)</button>
-    <button id="chooseFolderBtn" class="big secondary">Choose Save Folder (optional)</button>
-    <button id="saveTodayToFolderBtn" class="big wide secondary">Save Today CSV to Chosen Folder</button>
-    <div style="width:100%;margin-top:6px">Chosen folder: <span id="folderName">none</span></div>
+    <button id="exportAll" class="big secondary">Download All CSV</button>
   </div>
 
 <script>
-/* ---------- Robust loader + scanner ---------- */
-/* Try primary CDN then fallback CDN; wait for window.Html5Qrcode before running scanner code. */
-
-const PRIMARY_CDN = 'https://unpkg.com/html5-qrcode@2.3.8/minified/html5-qrcode.min.js';
-const FALLBACK_CDN = 'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/minified/html5-qrcode.min.js';
-const LIB_LOAD_TIMEOUT = 7000; // ms
-
-function loadScript(src){
-  return new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = src;
-    s.async = true;
-    s.onload = () => resolve();
-    s.onerror = () => reject(new Error('Failed to load ' + src));
-    document.head.appendChild(s);
-  });
-}
-
-async function ensureHtml5Qrcode(){
-  if(window.Html5Qrcode) return;
-  try {
-    await loadScript(PRIMARY_CDN);
-    if(window.Html5Qrcode) return;
-  } catch(e) {
-    console.warn('Primary CDN failed:', e);
-  }
-  try {
-    await loadScript(FALLBACK_CDN);
-    if(window.Html5Qrcode) return;
-  } catch(e) {
-    console.warn('Fallback CDN failed:', e);
-  }
-  // final check with timeout
-  const start = Date.now();
-  while(Date.now() - start < LIB_LOAD_TIMEOUT){
-    if(window.Html5Qrcode) return;
-    await new Promise(r => setTimeout(r, 100));
-  }
-  throw new Error('html5-qrcode library did not load');
-}
-
-/* ---------- Scanner + storage + folder handle (same logic as before) ---------- */
+/* ====== Config ====== */
 const STORAGE_KEY = 'deliveryLogs_v1';
 const REQUIRED = ['materialType','truckId','driver','netWeight','taeWeight','materialWeight','location'];
 const HANDLE_DB = 'fs-handles-v1';
 const HANDLE_STORE = 'handles';
 const HANDLE_KEY = 'chosenDir';
 
+/* ====== Utilities ====== */
 function nowIso(){ return new Date().toISOString(); }
 function loadLogs(){ try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]') }catch(e){ return [] } }
 function saveLogs(l){ localStorage.setItem(STORAGE_KEY, JSON.stringify(l)) }
@@ -128,7 +84,7 @@ function render(){
   });
 }
 
-/* IndexedDB helpers for persisting directory handle */
+/* ====== IndexedDB helpers for persisting directory handle ====== */
 function openDb(){
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(HANDLE_DB, 1);
@@ -171,7 +127,7 @@ async function idbDelete(key){
   });
 }
 
-/* File System Access API helpers */
+/* ====== File System Access API helpers ====== */
 let chosenDirHandle = null;
 const folderNameEl = document.getElementById('folderName');
 
@@ -183,16 +139,14 @@ async function chooseFolder(){
   try{
     const dir = await window.showDirectoryPicker();
     const perm = await dir.requestPermission({ mode: 'readwrite' });
-    if(perm !== 'granted'){
-      alert('Folder selected but permission not granted persistently. You may need to reselect later.');
-    }
+    if(perm !== 'granted') alert('Folder selected but permission not granted persistently.');
     chosenDirHandle = dir;
     try { await idbPut(HANDLE_KEY, dir); } catch(e){ console.warn('Persist handle failed', e); }
     folderNameEl.textContent = dir.name || 'selected';
-    alert('Folder selected. Files saved to this folder will not change your browser download settings.');
+    alert('Folder selected. Saving to this folder will not change browser download settings.');
   }catch(e){
-    console.error('chooseFolder error', e);
     if(e && e.name === 'AbortError') return;
+    console.error('chooseFolder error', e);
     alert('Failed to choose folder: ' + (e && e.message || e));
   }
 }
@@ -226,116 +180,52 @@ async function saveCsvToChosenFolder(filename, csvContent){
   await writable.close();
 }
 
-/* Scanner logic */
-let scanner = null;
-const lastEl = document.getElementById('last');
-const cameraStatusEl = document.getElementById('cameraStatus');
-
-function handleDecoded(decodedText){
-  try{
-    const payload = JSON.parse(decodedText);
-    for(const k of REQUIRED) if(!(k in payload)) throw new Error('Missing '+k);
-    const entry = {
-      timestamp: nowIso(),
-      materialType: payload.materialType,
-      truckId: payload.truckId,
-      driver: payload.driver || {},
-      netWeight: payload.netWeight,
-      taeWeight: payload.taeWeight,
-      materialWeight: payload.materialWeight,
-      location: payload.location,
-      raw: payload
-    };
-    addLog(entry);
-    lastEl.textContent = JSON.stringify(entry, null, 2);
-    if(navigator.vibrate) navigator.vibrate(120);
-  }catch(e){
-    lastEl.textContent = 'Invalid QR payload: ' + (e && e.message || e);
-  }
+/* ====== QR decode from uploaded image ====== */
+async function decodeImageFile(file){
+  // ensure html5-qrcode is available
+  if(!window.Html5Qrcode) throw new Error('Decoder library not loaded');
+  // html5-qrcode provides scanFileV2 which accepts File
+  const result = await Html5Qrcode.scanFileV2(file, { returnDetailedScanResult: false });
+  return result.decodedText || result;
 }
 
-async function requestPermission(){
-  try{
-    if(location.protocol === 'file:'){
-      lastEl.textContent = 'Serve via HTTPS or http://localhost; file:// blocks camera permission.';
-      return;
-    }
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } });
-    stream.getTracks().forEach(t=>t.stop());
-    lastEl.textContent = 'Camera permission granted';
-    cameraStatusEl.textContent = 'Camera: permission granted';
-  }catch(e){
-    lastEl.textContent = 'Permission error: ' + (e && e.message || e);
-    cameraStatusEl.textContent = 'Camera: permission denied';
-  }
-}
-
-async function startCamera(){
-  lastEl.textContent = '';
-  cameraStatusEl.textContent = 'Camera: starting...';
-  if(scanner){ lastEl.textContent = 'Scanner already running'; cameraStatusEl.textContent = 'Camera: running'; return; }
-  if(location.protocol === 'file:'){ lastEl.textContent = 'Serve the page via HTTPS or http://localhost; file:// blocks camera access.'; cameraStatusEl.textContent = 'Camera: unavailable'; return; }
-
-  try{
-    await ensureHtml5Qrcode();
-    try { await navigator.mediaDevices.getUserMedia({ video: true }).then(s=>s.getTracks().forEach(t=>t.stop())); } catch(e){ /* ignore */ }
-
-    scanner = new Html5Qrcode("reader");
-    const cams = await Html5Qrcode.getCameras();
-    let camId = cams && cams.length ? cams[0].id : null;
-    if(cams && cams.length > 1){
-      const rear = cams.find(c=>/(back|rear|environment)/i.test(c.label));
-      if(rear) camId = rear.id;
-    }
-    await scanner.start(
-      camId,
-      { fps: 10, qrbox: { width: Math.min(window.innerWidth, 320), height: Math.min(window.innerWidth, 320) } },
-      decodedText => handleDecoded(decodedText),
-      errorMsg => { /* per-frame errors ignored */ }
-    );
-    cameraStatusEl.textContent = 'Camera: running';
-    lastEl.textContent = 'Scanner started';
-  }catch(e){
-    scanner = null;
-    lastEl.textContent = 'Start failed: ' + (e && e.message || e);
-    cameraStatusEl.textContent = 'Camera: failed';
-    console.error('startCamera error', e);
-  }
-}
-
-async function stopCamera(){
-  if(!scanner){ lastEl.textContent = 'Scanner not running'; cameraStatusEl.textContent = 'Camera: idle'; return; }
-  try{
-    await scanner.stop();
-    scanner.clear();
-    scanner = null;
-    lastEl.textContent = 'Scanner stopped';
-    cameraStatusEl.textContent = 'Camera: stopped';
-  }catch(e){
-    scanner = null;
-    lastEl.textContent = 'Stop error: ' + (e && e.message || e);
-    cameraStatusEl.textContent = 'Camera: error';
-    console.error('stopCamera error', e);
-  }
-}
-
-/* Image upload fallback */
+/* ====== Upload handler ====== */
 document.getElementById('fileInput').addEventListener('change', async (ev)=>{
   const f = ev.target.files && ev.target.files[0];
   if(!f) return;
+  document.getElementById('last').textContent = 'Decoding image...';
   try{
-    await ensureHtml5Qrcode();
-    const result = await Html5Qrcode.scanFileV2(f, { returnDetailedScanResult: false });
-    const decoded = result.decodedText || result;
-    handleDecoded(decoded);
-  }catch(e){
-    lastEl.textContent = 'Image scan failed: ' + (e && e.message || e);
+    const decoded = await decodeImageFile(f);
+    // parse JSON payload and validate
+    try{
+      const payload = JSON.parse(decoded);
+      for(const k of REQUIRED) if(!(k in payload)) throw new Error('Missing '+k);
+      const entry = {
+        timestamp: nowIso(),
+        materialType: payload.materialType,
+        truckId: payload.truckId,
+        driver: payload.driver || {},
+        netWeight: payload.netWeight,
+        taeWeight: payload.taeWeight,
+        materialWeight: payload.materialWeight,
+        location: payload.location,
+        raw: payload
+      };
+      addLog(entry);
+      document.getElementById('last').textContent = JSON.stringify(entry, null, 2);
+      if(navigator.vibrate) navigator.vibrate(120);
+    }catch(parseErr){
+      document.getElementById('last').textContent = 'QR decoded but JSON invalid: ' + (parseErr && parseErr.message || parseErr);
+    }
+  }catch(err){
+    document.getElementById('last').textContent = 'Image decode failed: ' + (err && err.message || err);
+    console.error('decode error', err);
   } finally {
     ev.target.value = '';
   }
 });
 
-/* Save actions */
+/* ====== Save / export actions ====== */
 document.getElementById('saveToday').addEventListener('click', ()=>{
   const logs = loadLogs();
   const today = new Date().toISOString().slice(0,10);
@@ -343,6 +233,14 @@ document.getElementById('saveToday').addEventListener('click', ()=>{
   if(!todays.length){ alert('No logs for today'); return; }
   const csv = logsToCsv(todays);
   const filename = `delivery-log-${today}.csv`;
+  downloadFile(filename, csv);
+});
+
+document.getElementById('exportAll').addEventListener('click', ()=>{
+  const logs = loadLogs();
+  if(!logs.length){ alert('No logs'); return; }
+  const csv = logsToCsv(logs);
+  const filename = `delivery-log-all-${new Date().toISOString().slice(0,10)}.csv`;
   downloadFile(filename, csv);
 });
 
@@ -355,15 +253,8 @@ document.getElementById('saveTodayToFolderBtn').addEventListener('click', async 
   if(!todays.length){ alert('No logs for today'); return; }
   const csv = logsToCsv(todays);
   const filename = `delivery-log-${today}.csv`;
-
-  if(!('showDirectoryPicker' in window)){
-    alert('Your browser does not support saving to a chosen folder. Use the Download button instead.');
-    return;
-  }
-  if(!chosenDirHandle){
-    alert('No folder chosen. Click "Choose Save Folder" first.');
-    return;
-  }
+  if(!('showDirectoryPicker' in window)){ alert('Folder API not supported; use download'); return; }
+  if(!chosenDirHandle){ alert('No folder chosen. Click "Choose Save Folder" first.'); return; }
   try{
     await saveCsvToChosenFolder(filename, csv);
     alert('Saved to chosen folder: ' + filename);
@@ -373,18 +264,13 @@ document.getElementById('saveTodayToFolderBtn').addEventListener('click', async 
   }
 });
 
-/* Buttons and init */
-document.getElementById('requestBtn').addEventListener('click', requestPermission);
-document.getElementById('startBtn').addEventListener('click', startCamera);
-document.getElementById('stopBtn').addEventListener('click', stopCamera);
-
-function updateOnline(){ document.getElementById('online').textContent = navigator.onLine ? 'Online' : 'Offline'; }
-window.addEventListener('online', updateOnline); window.addEventListener('offline', updateOnline); updateOnline();
-
-(async ()=> {
+/* ====== Init ====== */
+async function init(){
+  // restore chosen folder if possible
   try{ if('showDirectoryPicker' in window) await restoreChosenFolder(); else folderNameEl.textContent = 'not supported'; }catch(e){ console.warn(e); folderNameEl.textContent = 'none'; }
   render();
-})();
+}
+init();
 </script>
 </body>
 </html>
