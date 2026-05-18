@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Stefanutti Stocks — Delivery QR Scanner</title>
+  <meta name="color-scheme" content="light dark">
   <style>
     :root{
       --brand-navy:#0b2b57;
@@ -16,26 +17,30 @@
       --radius:12px;
       --pad:14px;
       --max-width:1100px;
-      font-family:Inter,system-ui,Roboto,Arial;
+      font-family:Inter,system-ui,Roboto,Arial,sans-serif;
+      --touch:16px;
     }
-    html,body{height:100%;margin:0;background:linear-gradient(180deg,var(--bg),#eef4fb);color:#0f172a}
-    .wrap{max-width:var(--max-width);margin:20px auto;padding:12px}
-    header{display:flex;align-items:center;gap:16px;padding:12px;border-radius:12px;background:linear-gradient(90deg,var(--brand-navy),#0a2548);color:#fff}
-    #brandLogo{height:56px;width:56px;border-radius:10px;background:rgba(255,255,255,0.04);object-fit:contain}
+
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,var(--bg),#eef4fb);color:#0f172a;-webkit-font-smoothing:antialiased}
+    .wrap{max-width:var(--max-width);margin:18px auto;padding:12px}
+    header{display:flex;align-items:center;gap:14px;padding:12px;border-radius:12px;background:linear-gradient(90deg,var(--brand-navy),#0a2548);color:#fff}
+    #brandLogo{height:56px;width:56px;border-radius:10px;background:rgba(255,255,255,0.04);object-fit:contain;flex:0 0 56px}
     .brandTitle{font-weight:700;font-size:18px;letter-spacing:0.2px}
     .brandSub{font-size:13px;opacity:0.95}
+
+    /* Layout */
     .grid{display:grid;grid-template-columns:1fr 420px;gap:16px;margin-top:16px}
     .card{background:var(--card);border-radius:var(--radius);padding:var(--pad);box-shadow:0 6px 18px rgba(11,20,40,0.06)}
     .controls{display:flex;flex-wrap:wrap;gap:10px}
-    button{background:var(--brand-navy);color:#fff;border:0;padding:10px 12px;border-radius:10px;cursor:pointer;font-weight:600}
-    button.ghost{background:transparent;border:1px solid #e6eefc;color:var(--muted);font-weight:600}
-    button.yellow{background:var(--brand-yellow);color:#07203a;font-weight:700}
+    button{background:var(--brand-navy);color:#fff;border:0;padding:12px 14px;border-radius:10px;cursor:pointer;font-weight:700;font-size:15px}
+    button.ghost{background:transparent;border:1px solid rgba(11,20,40,0.06);color:var(--muted);font-weight:700}
+    button.yellow{background:var(--brand-yellow);color:#07203a;font-weight:800}
     .wide{flex:1 1 100%}
     .muted{color:var(--muted);font-size:13px}
     #video{width:100%;height:320px;background:#000;border-radius:10px;object-fit:cover;display:none}
     #previewCanvas{display:none}
     .scanGuide{position:relative;border-radius:10px;overflow:hidden}
-    .guideOverlay{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:60%;height:60%;border:3px dashed rgba(246,196,0,0.95);border-radius:8px;pointer-events:none;box-shadow:0 0 0 9999px rgba(11,20,40,0.22)}
+    .guideOverlay{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:62%;height:62%;border:3px dashed rgba(246,196,0,0.95);border-radius:8px;pointer-events:none;box-shadow:0 0 0 9999px rgba(11,20,40,0.18)}
     .status{margin-top:10px;font-size:14px}
     table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
     th,td{padding:8px;border-bottom:1px solid #f1f5fb;text-align:left}
@@ -44,8 +49,18 @@
     .small{font-size:12px;color:var(--muted)}
     .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
     input[type=file]{display:none}
-    /* Responsive */
-    @media (max-width:980px){ .grid{grid-template-columns:1fr; } #video{height:240px} }
+
+    /* Mobile-first improvements */
+    @media (max-width:980px){
+      .grid{grid-template-columns:1fr;gap:12px}
+      header{padding:10px}
+      #video{height:220px}
+      button{padding:12px;border-radius:12px;font-size:16px}
+      .guideOverlay{width:78%;height:48%}
+    }
+
+    /* Larger touch targets for tablets/phones */
+    .big { padding:16px 18px; font-size:17px; border-radius:14px; }
   </style>
 </head>
 <body>
@@ -60,15 +75,15 @@
       </div>
     </header>
 
-    <div class="grid">
+    <div class="grid" role="main">
       <!-- Scanner area -->
-      <div class="card">
+      <div class="card" aria-labelledby="scanHeading">
         <div style="display:flex;justify-content:space-between;align-items:center">
-          <div style="font-weight:700">Scan QR</div>
+          <div id="scanHeading" style="font-weight:700">Scan QR</div>
           <div class="small">Printed labels • Mobile friendly</div>
         </div>
 
-        <div style="margin-top:12px" class="scanGuide">
+        <div style="margin-top:12px" class="scanGuide" aria-hidden="false">
           <div id="videoContainer" style="position:relative">
             <video id="video" playsinline autoplay></video>
             <canvas id="previewCanvas"></canvas>
@@ -77,27 +92,27 @@
         </div>
 
         <div class="controls" style="margin-top:12px">
-          <button id="uploadBtn" class="ghost">Upload Photo</button>
-          <input id="fileInput" type="file" accept="image/*" class="sr-only">
-          <button id="openCamBtn">Open Camera</button>
-          <button id="captureBtn" class="yellow">Capture</button>
-          <button id="closeCamBtn" class="ghost">Close</button>
+          <!-- Two camera options for versatility -->
+          <button id="openNativeCameraBtn" class="ghost big">Open Native Camera App</button>
+          <button id="openInAppCameraBtn" class="big">Open In-App Camera</button>
+          <button id="captureBtn" class="yellow big">Capture</button>
         </div>
 
         <div style="display:flex;gap:8px;align-items:center;margin-top:10px">
+          <button id="uploadBtn" class="ghost">Upload Photo</button>
+          <input id="fileInput" type="file" accept="image/*" class="sr-only">
           <button id="loadLogoBtn" class="ghost">Load Logo</button>
           <input id="logoPicker" type="file" accept="image/*" class="sr-only">
-          <div class="muted small">Load your company logo (temporary; persists in session).</div>
         </div>
 
-        <div class="status" id="status">Ready — position QR inside the yellow frame.</div>
-        <div class="hint">Tip: hold steady, avoid glare, and make the QR fill the guide for best results.</div>
+        <div class="status" id="status" role="status">Ready — position QR inside the yellow frame.</div>
+        <div class="hint">Tip: hold steady, avoid glare, and make the QR fill the guide for best results. Use the native camera option on phones to open the phone's camera app directly.</div>
       </div>
 
       <!-- Logs & actions -->
-      <aside class="card">
+      <aside class="card" aria-labelledby="logsHeading">
         <div style="display:flex;justify-content:space-between;align-items:center">
-          <div style="font-weight:700">Recent Scans</div>
+          <div id="logsHeading" style="font-weight:700">Recent Scans</div>
           <div class="muted" id="count">0</div>
         </div>
 
@@ -110,7 +125,7 @@
         <div class="footerActions">
           <button id="chooseFolderBtn" class="ghost">Choose Save Folder</button>
           <button id="saveToFolderBtn" class="ghost">Save All</button>
-          <button id="shareTodayBtn">Share Today</button>
+          <button id="shareTodayBtn" class="big">Share Today</button>
           <button id="downloadTodayBtn" class="ghost">Download CSV</button>
         </div>
 
@@ -119,15 +134,20 @@
     </div>
   </div>
 
+  <!-- Hidden inputs used to open native camera app on mobile -->
+  <input id="cameraCaptureInput" type="file" accept="image/*" capture="environment" class="sr-only">
+
   <script>
   /* =========================
-     Full single-file app
-     - Logo loader (user picks file; no hard-coded path)
-     - Robust QR decode (jsQR + preprocessing)
-     - Camera capture, upload, share/save flows
+     Updated app behavior:
+     - "Open Native Camera App" uses input[capture] to open the phone's native camera app.
+     - "Open In-App Camera" uses getUserMedia for an embedded camera preview.
+     - Logo loader persists as data URL in localStorage so it shows across sessions.
+     - Mobile-first responsive layout and larger touch targets.
+     - Robust decode pipeline (jsQR + preprocessing) retained.
      ========================= */
 
-  // Load jsQR from CDN then initialize
+  // Load jsQR then initialize
   (function(){
     const jsqrUrl = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
     const s = document.createElement('script'); s.src = jsqrUrl; s.async = true;
@@ -140,9 +160,11 @@
     // Elements
     const fileInput = document.getElementById('fileInput');
     const uploadBtn = document.getElementById('uploadBtn');
-    const openCamBtn = document.getElementById('openCamBtn');
+    const openNativeCameraBtn = document.getElementById('openNativeCameraBtn');
+    const cameraCaptureInput = document.getElementById('cameraCaptureInput');
+    const openInAppCameraBtn = document.getElementById('openInAppCameraBtn');
     const captureBtn = document.getElementById('captureBtn');
-    const closeCamBtn = document.getElementById('closeCamBtn');
+    const closeCamBtn = document.getElementById('closeCamBtn'); // not present in this layout but kept for compatibility
     const video = document.getElementById('video');
     const previewCanvas = document.getElementById('previewCanvas');
     const statusEl = document.getElementById('status');
@@ -153,7 +175,6 @@
     const logoPicker = document.getElementById('logoPicker');
     const brandLogo = document.getElementById('brandLogo');
 
-    // Save/share controls
     const chooseFolderBtn = document.getElementById('chooseFolderBtn');
     const saveToFolderBtn = document.getElementById('saveToFolderBtn');
     const shareTodayBtn = document.getElementById('shareTodayBtn');
@@ -162,6 +183,17 @@
     // State
     let stream = null;
     let chosenDirHandle = null;
+
+    // Persisted logo: load from localStorage if present
+    try{
+      const logoData = localStorage.getItem('stef_logo_dataurl');
+      if(logoData){
+        brandLogo.src = logoData;
+      } else {
+        // If no stored logo, show a subtle placeholder (keeps header balanced)
+        brandLogo.style.background = 'linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01))';
+      }
+    }catch(e){ console.warn('logo load failed', e); }
 
     // Storage helpers
     const STORAGE_KEY = 'deliveryLogs_v1';
@@ -183,15 +215,76 @@
       const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
     }
 
-    // Logo loader (user picks file; displayed immediately)
+    /* -------------------------
+       Logo loader (persist as data URL)
+       ------------------------- */
     loadLogoBtn.addEventListener('click', ()=> logoPicker.click());
     logoPicker.addEventListener('change', (e)=>{
       const f = e.target.files && e.target.files[0]; if(!f) return;
-      brandLogo.src = URL.createObjectURL(f);
-      brandLogo.onload = ()=> URL.revokeObjectURL(brandLogo.src);
+      const reader = new FileReader();
+      reader.onload = () => {
+        try{
+          brandLogo.src = reader.result;
+          localStorage.setItem('stef_logo_dataurl', reader.result);
+        }catch(e){ console.warn('logo persist failed', e); brandLogo.src = reader.result; }
+      };
+      reader.readAsDataURL(f);
     });
 
-    // File upload
+    /* -------------------------
+       Native camera: open phone's camera app
+       - Uses input[capture] which on most mobile devices opens the native camera app
+       - This is the recommended path for foremen who prefer the phone's camera UI
+       ------------------------- */
+    openNativeCameraBtn.addEventListener('click', ()=> cameraCaptureInput.click());
+    cameraCaptureInput.addEventListener('change', async (ev)=>{
+      const f = ev.target.files && ev.target.files[0]; if(!f) return;
+      statusEl.textContent = 'Decoding photo from native camera...';
+      try{
+        const decoded = await decodeFileRobust(f);
+        handleDecoded(decoded);
+      }catch(err){
+        statusEl.textContent = 'No QR found in photo';
+      } finally { ev.target.value = ''; }
+    });
+
+    /* -------------------------
+       In-app camera: getUserMedia preview + capture
+       - Good for tablets and desktops where users want an embedded preview
+       ------------------------- */
+    openInAppCameraBtn.addEventListener('click', async ()=>{
+      statusEl.textContent = 'Opening in-app camera...';
+      try{
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+        video.srcObject = stream; video.style.display = 'block';
+        statusEl.textContent = 'In-app camera open — position QR and tap Capture';
+      }catch(e){
+        statusEl.textContent = 'In-app camera unavailable or permission denied';
+      }
+    });
+
+    captureBtn.addEventListener('click', async ()=>{
+      // If in-app camera is open, capture from video; otherwise fall back to file input
+      if(stream && video && video.videoWidth){
+        const w = video.videoWidth || 1280, h = video.videoHeight || 720;
+        previewCanvas.width = w; previewCanvas.height = h;
+        const ctx = previewCanvas.getContext('2d'); ctx.drawImage(video, 0, 0, w, h);
+        previewCanvas.style.display = 'block';
+        statusEl.textContent = 'Captured — decoding...';
+        try{
+          const blob = await new Promise(res => previewCanvas.toBlob(res, 'image/jpeg', 0.95));
+          const decoded = await decodeFileRobust(blob);
+          handleDecoded(decoded);
+        }catch(e){
+          statusEl.textContent = 'No QR found in capture';
+        }
+        return;
+      }
+      // If no in-app camera, open file picker as fallback
+      fileInput.click();
+    });
+
+    // Upload button (manual file selection)
     uploadBtn.addEventListener('click', ()=> fileInput.click());
     fileInput.addEventListener('change', async (ev)=>{
       const f = ev.target.files && ev.target.files[0]; if(!f) return;
@@ -204,40 +297,9 @@
       } finally { ev.target.value = ''; }
     });
 
-    // Camera controls
-    openCamBtn.addEventListener('click', async ()=>{
-      statusEl.textContent = 'Opening camera...';
-      try{
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-        video.srcObject = stream; video.style.display = 'block';
-        statusEl.textContent = 'Camera open — position QR inside the yellow guide and tap Capture';
-      }catch(e){
-        statusEl.textContent = 'Camera access denied or unavailable';
-      }
-    });
-
-    captureBtn.addEventListener('click', async ()=>{
-      if(!stream){ statusEl.textContent = 'Open camera first'; return; }
-      const w = video.videoWidth || 1280, h = video.videoHeight || 720;
-      previewCanvas.width = w; previewCanvas.height = h;
-      const ctx = previewCanvas.getContext('2d'); ctx.drawImage(video, 0, 0, w, h);
-      previewCanvas.style.display = 'block';
-      statusEl.textContent = 'Captured — decoding...';
-      try{
-        const blob = await new Promise(res => previewCanvas.toBlob(res, 'image/jpeg', 0.95));
-        const decoded = await decodeFileRobust(blob);
-        handleDecoded(decoded);
-      }catch(e){
-        statusEl.textContent = 'No QR found in capture';
-      }
-    });
-
-    closeCamBtn.addEventListener('click', ()=>{
-      if(stream){ stream.getTracks().forEach(t=>t.stop()); stream = null; }
-      video.srcObject = null; video.style.display = 'none';
-      statusEl.textContent = 'Camera closed';
-    });
-
+    /* -------------------------
+       Save / share controls
+       ------------------------- */
     // Directory picker persistence (IndexedDB)
     const DB_NAME = 'scanner-handles-v1', STORE = 'handles', KEY = 'chosenDir';
     function openDb(){ return new Promise((res, rej)=>{ const r = indexedDB.open(DB_NAME,1); r.onupgradeneeded = ()=> r.result.createObjectStore(STORE); r.onsuccess = ()=> res(r.result); r.onerror = ()=> rej(r.error); }); }
@@ -256,7 +318,6 @@
       }
     });
 
-    // Restore chosen folder on load
     (async function restoreFolder(){
       if(!('showDirectoryPicker' in window)) return;
       try{
@@ -266,7 +327,7 @@
         const perm = await chosenDirHandle.queryPermission({ mode: 'readwrite' });
         if(perm === 'prompt'){ const r = await chosenDirHandle.requestPermission({ mode: 'readwrite' }); if(r !== 'granted'){ await idbDelete(KEY); chosenDirHandle = null; return; } }
         if(perm !== 'granted' && perm !== 'prompt'){ chosenDirHandle = null; return; }
-        document.getElementById('status').textContent = 'Restored folder: ' + (chosenDirHandle.name || 'selected');
+        statusEl.textContent = 'Restored folder: ' + (chosenDirHandle.name || 'selected');
       }catch(e){ console.warn(e); }
     })();
 
@@ -305,7 +366,10 @@
       const csv = logsToCsv(todays); const filename = `delivery-log-${today}.csv`; downloadFile(filename, csv); statusEl.textContent = 'Downloaded CSV';
     });
 
-    // Decoding pipeline (jsQR + preprocessing)
+    /* -------------------------
+       Decoding pipeline (jsQR + preprocessing)
+       - same robust pipeline as before
+       ------------------------- */
     async function decodeFileRobust(file){
       const img = await new Promise((res, rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=()=>rej(new Error('image load')); i.src = URL.createObjectURL(file); });
       const maxDim = 2000; let w = img.naturalWidth, h = img.naturalHeight;
@@ -331,14 +395,14 @@
     }
 
     async function tryDecodeCanvas(canvas){
-      // raw attempt
+      // raw
       try{
         const ctx = canvas.getContext('2d'); const data = ctx.getImageData(0,0,canvas.width,canvas.height);
         const code = jsQR(data.data, data.width, data.height, { inversionAttempts: 'attemptBoth' });
         if(code) return code.data;
       }catch(e){ console.warn(e); }
 
-      // grayscale + contrast boost
+      // grayscale + contrast
       try{
         const ctx = canvas.getContext('2d'); const imgData = ctx.getImageData(0,0,canvas.width,canvas.height);
         for(let i=0;i<imgData.data.length;i+=4){
